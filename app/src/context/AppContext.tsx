@@ -12,6 +12,11 @@ import {
 } from '../types/models';
 import {
   checkBackendHealth,
+  detectAuthenticatedUser,
+  fetchMemberActivities,
+  fetchMemberConversations,
+  fetchMemberTrips,
+  fetchRealUserProfile,
   INITIAL_ACTIVITIES,
   INITIAL_CONVERSATIONS,
   INITIAL_GROUPS,
@@ -93,17 +98,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     pushEnabled: true,
   });
 
-  const [hosts] = useState<Member[]>(INITIAL_HOSTS);
+  const [hosts, setHosts] = useState<Member[]>(INITIAL_HOSTS);
   const [selectedHost, setSelectedHost] = useState<Member>(INITIAL_HOSTS[0]);
-  const [trips] = useState<Trip[]>(INITIAL_TRIPS);
+  const [trips, setTrips] = useState<Trip[]>(INITIAL_TRIPS);
   const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
   const [selectedConversationId, setSelectedConversationId] = useState<number>(INITIAL_CONVERSATIONS[0].id);
   const [activities, setActivities] = useState<ActivityEvent[]>(INITIAL_ACTIVITIES);
-  const [threads] = useState<ForumThread[]>(INITIAL_THREADS);
+  const [threads, setThreads] = useState<ForumThread[]>(INITIAL_THREADS);
   const [groups, setGroups] = useState<CommunityGroup[]>(INITIAL_GROUPS);
+
+  const loadUserData = async (username: string) => {
+    try {
+      const profile = await fetchRealUserProfile(username);
+      const initials = (profile.name || username).slice(0, 2).toUpperCase();
+      setMe({
+        username: profile.username,
+        name: profile.name,
+        initials,
+        city: profile.city || 'Berlin',
+        country: profile.country || 'Germany',
+        accommodation: profile.accommodation,
+        maxGuests: profile.maxGuests,
+        language: profile.languages[0] || 'English (EN)',
+        pushEnabled: true,
+      });
+
+      // Load user's real trips, messages, and activities
+      const [realTrips, realConversations, realActivities] = await Promise.all([
+        fetchMemberTrips(),
+        fetchMemberConversations(),
+        fetchMemberActivities(),
+      ]);
+
+      setTrips(realTrips);
+      setConversations(realConversations);
+      if (realConversations.length > 0) {
+        setSelectedConversationId(realConversations[0].id);
+      }
+      setActivities(realActivities);
+    } catch (err) {
+      console.log('[loadUserData error]', err);
+    }
+  };
 
   useEffect(() => {
     checkBackendHealth().then(setBackendOnline);
+
+    // Auto-detect existing authenticated session on app mount
+    detectAuthenticatedUser().then(async (username) => {
+      if (username) {
+        console.log('[BW session] Active session detected for:', username);
+        await loadUserData(username);
+        setIsAuthenticated(true);
+        setCurrentScreen('home');
+      }
+    });
   }, []);
 
   const navigate = (screen: ScreenKey) => setCurrentScreen(screen);
@@ -114,13 +163,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return result;
     }
     const clean = result.username || username.trim();
-    const initials = clean.slice(0, 2).toUpperCase();
-    setMe((prev) => ({
-      ...prev,
-      username: clean,
-      name: clean,
-      initials,
-    }));
+    await loadUserData(clean);
     setBackendOnline(true);
     setIsAuthenticated(true);
     setCurrentScreen('home');

@@ -12,6 +12,7 @@ config.server.enhanceMiddleware = (middleware, server) => {
     const isLocalProxy = req.url && req.url.startsWith('/local-proxy');
 
     if (isBwProxy || isLocalProxy) {
+      console.log(`[Proxy Req] ${req.method} ${req.url} | Cookie: ${req.headers.cookie ? req.headers.cookie.split(';')[0] : 'NONE'}`);
       const origin = req.headers.origin || '*';
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -55,9 +56,20 @@ config.server.enhanceMiddleware = (middleware, server) => {
             );
             res.setHeader('set-cookie', rewritten);
           } else if (key.toLowerCase() === 'location') {
-            const rewritten = (val || '')
-              .replace(/^https?:\/\/bewelcome\.org/i, '/bw-proxy')
-              .replace(/^http:\/\/localhost/i, '/local-proxy');
+            let rewritten = val || '';
+            if (isBwProxy) {
+              if (rewritten.startsWith('https://bewelcome.org') || rewritten.startsWith('http://bewelcome.org')) {
+                rewritten = rewritten.replace(/^https?:\/\/bewelcome\.org/i, '/bw-proxy');
+              } else if (rewritten.startsWith('/') && !rewritten.startsWith('/bw-proxy')) {
+                rewritten = '/bw-proxy' + rewritten;
+              }
+            } else if (isLocalProxy) {
+              if (rewritten.startsWith('http://localhost')) {
+                rewritten = rewritten.replace(/^http:\/\/localhost(?::\d+)?/i, '/local-proxy');
+              } else if (rewritten.startsWith('/') && !rewritten.startsWith('/local-proxy')) {
+                rewritten = '/local-proxy' + rewritten;
+              }
+            }
             res.setHeader('location', rewritten);
           } else {
             res.setHeader(key, val);

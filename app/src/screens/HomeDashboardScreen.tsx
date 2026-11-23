@@ -60,7 +60,7 @@ export function HomeDashboardScreen() {
       </View>
 
       {/* 1. UPCOMING TRIP HERO */}
-      {myTrip && (
+      {myTrip ? (
         <View style={styles.tripHero}>
           <View style={styles.tripHeroTop}>
             <View style={styles.tripHeroLeft}>
@@ -139,6 +139,21 @@ export function HomeDashboardScreen() {
             })}
           </View>
         </View>
+      ) : (
+        <View style={styles.tripHero}>
+          <View style={styles.tripHeroTop}>
+            <View style={styles.tripHeroLeft}>
+              <View style={[styles.countdownPill, { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
+                <Text style={styles.countdownText}>NO ACTIVE TRIPS</Text>
+              </View>
+              <Text style={styles.tripHeroTitle}>Where are you traveling next?</Text>
+            </View>
+            <Button label="+ Plan Trip" onPress={() => navigate('trips')} />
+          </View>
+          <Text style={[styles.legSub, { color: '#CBD5E1', marginTop: 10 }]}>
+            Plan a multi-city journey to find welcoming local hosts, get tips, and attend community meetups.
+          </Text>
+        </View>
       )}
 
       {/* 2. HOST REQUESTS + 3. EVENTS YOU'RE JOINING */}
@@ -163,88 +178,111 @@ export function HomeDashboardScreen() {
           </View>
 
           <View style={{ gap: 12, marginTop: 14 }}>
-            {visibleReqs.map((req) => {
-              const lastMsg = req.messages[req.messages.length - 1];
-              const statusTone =
-                req.status === 'accepted'
-                  ? 'green'
-                  : req.status === 'tentative'
-                  ? 'blue'
-                  : req.status === 'declined'
-                  ? 'neutral'
-                  : 'amber';
-              const statusLabel =
-                req.status === 'accepted'
-                  ? 'Accepted'
-                  : req.status === 'tentative'
-                  ? 'Tentative'
-                  : req.status === 'declined'
-                  ? 'Declined'
-                  : 'Awaiting Reply';
+            {visibleReqs.length === 0 ? (
+              <View style={{ padding: 24, alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.ink }}>
+                  No {reqTab === 'incoming' ? 'incoming' : 'sent'} requests
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 18 }}>
+                  {reqTab === 'incoming'
+                    ? 'When travelers want to stay in your city, their requests will appear here.'
+                    : "You haven't sent any host requests yet. Find a welcoming host on the map!"}
+                </Text>
+                {reqTab === 'outgoing' && (
+                  <View style={{ marginTop: 8 }}>
+                    <Button
+                      label="Browse Hosts"
+                      variant="outline"
+                      size="sm"
+                      onPress={() => navigate('explore')}
+                    />
+                  </View>
+                )}
+              </View>
+            ) : (
+              visibleReqs.map((req) => {
+                const lastMsg = req.messages[req.messages.length - 1];
+                const statusTone =
+                  req.status === 'accepted'
+                    ? 'green'
+                    : req.status === 'tentative'
+                    ? 'blue'
+                    : req.status === 'declined'
+                    ? 'neutral'
+                    : 'amber';
+                const statusLabel =
+                  req.status === 'accepted'
+                    ? 'Accepted'
+                    : req.status === 'tentative'
+                    ? 'Tentative'
+                    : req.status === 'declined'
+                    ? 'Declined'
+                    : 'Awaiting Reply';
 
-              return (
-                <View key={req.id} style={styles.reqItem}>
-                  <View style={styles.reqTop}>
-                    <View style={styles.rowGap10}>
-                      <Avatar initials={req.otherInitials} color={req.otherColor} size={38} />
-                      <View>
-                        <Text style={styles.reqName}>
-                          {req.otherName} <Text style={styles.reqCity}>· {req.otherCity}</Text>
-                        </Text>
-                        <View style={styles.rowGap6}>
-                          <Calendar size={12} color={colors.muted} />
-                          <Text style={styles.reqMeta}>
-                            {req.dates} · {req.guests} guest{req.guests === 1 ? '' : 's'}
-                            {req.flexible ? ' · Flexible' : ''}
+                return (
+                  <View key={req.id} style={styles.reqItem}>
+                    <View style={styles.reqTop}>
+                      <View style={styles.rowGap10}>
+                        <Avatar initials={req.otherInitials} color={req.otherColor} size={38} />
+                        <View>
+                          <Text style={styles.reqName}>
+                            {req.otherName} <Text style={styles.reqCity}>· {req.otherCity}</Text>
                           </Text>
+                          <View style={styles.rowGap6}>
+                            <Calendar size={12} color={colors.muted} />
+                            <Text style={styles.reqMeta}>
+                              {req.dates} · {req.guests} guest{req.guests === 1 ? '' : 's'}
+                              {req.flexible ? ' · Flexible' : ''}
+                            </Text>
+                          </View>
                         </View>
                       </View>
+                      <Badge label={statusLabel} tone={statusTone} />
                     </View>
-                    <Badge label={statusLabel} tone={statusTone} />
-                  </View>
 
-                  <Text style={styles.reqBody} numberOfLines={2}>
-                    “{lastMsg?.body}”
-                  </Text>
+                    <Text style={styles.reqBody} numberOfLines={2}>
+                      “{lastMsg?.body}”
+                    </Text>
 
-                  <View style={styles.reqActions}>
-                    {req.direction === 'incoming' && req.status === 'pending' ? (
-                      <>
+                    <View style={styles.reqActions}>
+                      {req.direction === 'incoming' && req.status === 'pending' ? (
+                        <>
+                          <Button
+                            label="Accept"
+                            variant="green"
+                            size="sm"
+                            onPress={() => updateRequestStatus(req.id, 'accepted')}
+                          />
+                          <Button
+                            label="Tentative"
+                            variant="outline"
+                            size="sm"
+                            onPress={() => updateRequestStatus(req.id, 'tentative')}
+                          />
+                          <Button
+                            label="Decline"
+                            variant="ghost"
+                            size="sm"
+                            onPress={() => updateRequestStatus(req.id, 'declined')}
+                          />
+                        </>
+                      ) : (
                         <Button
-                          label="Accept"
-                          variant="green"
+                          label="Open Thread"
+                          variant="ink"
                           size="sm"
-                          onPress={() => updateRequestStatus(req.id, 'accepted')}
+                          onPress={() => {
+                            setSelectedConversationId(req.id);
+                            navigate('messages');
+                          }}
                         />
-                        <Button
-                          label="Tentative"
-                          variant="outline"
-                          size="sm"
-                          onPress={() => updateRequestStatus(req.id, 'tentative')}
-                        />
-                        <Button
-                          label="Decline"
-                          variant="ghost"
-                          size="sm"
-                          onPress={() => updateRequestStatus(req.id, 'declined')}
-                        />
-                      </>
-                    ) : (
-                      <Button
-                        label="Open Thread"
-                        variant="ink"
-                        size="sm"
-                        onPress={() => {
-                          setSelectedConversationId(req.id);
-                          navigate('messages');
-                        }}
-                      />
-                    )}
-                    <Text style={styles.refsText}>{req.positiveRefs} positive refs</Text>
+                      )}
+                      <Text style={styles.refsText}>{req.positiveRefs} positive refs</Text>
+                    </View>
                   </View>
-                </View>
-              );
-            })}
+                );
+              })
+            )}
           </View>
         </Card>
 
@@ -258,33 +296,52 @@ export function HomeDashboardScreen() {
           </View>
 
           <View style={{ gap: 12, marginTop: 14 }}>
-            {(joinedEvents.length > 0 ? joinedEvents : activities.slice(0, 2)).map((ev) => (
-              <View key={ev.id} style={styles.eventItem}>
-                <View style={styles.eventRow}>
-                  <View style={[styles.dateBox, { backgroundColor: ev.accent }]}>
-                    <Text style={styles.dateMonth}>{ev.month}</Text>
-                    <Text style={styles.dateDay}>{ev.day}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.eventTitle}>{ev.title}</Text>
-                    <View style={styles.rowGap4}>
-                      <Clock size={12} color={colors.muted} />
-                      <Text style={styles.eventMeta}>
-                        {ev.timeLabel} · {ev.city}
-                      </Text>
-                    </View>
-                  </View>
-                  <Badge label={ev.isGoing ? 'Going' : 'Open'} tone={ev.isGoing ? 'green' : 'neutral'} />
-                </View>
-
-                <View style={styles.eventFooter}>
-                  <Text style={styles.eventGoingText}>{ev.goingCount} members going</Text>
-                  <Pressable onPress={() => toggleRsvp(ev.id)}>
-                    <Text style={styles.linkText}>{ev.isGoing ? 'Leave' : 'Join Event'}</Text>
-                  </Pressable>
+            {activities.length === 0 ? (
+              <View style={{ padding: 24, alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.ink }}>
+                  No upcoming events
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 18 }}>
+                  Discover local meetups, language exchanges, and community gatherings nearby.
+                </Text>
+                <View style={{ marginTop: 8 }}>
+                  <Button
+                    label="Browse Activities"
+                    variant="outline"
+                    size="sm"
+                    onPress={() => navigate('activities')}
+                  />
                 </View>
               </View>
-            ))}
+            ) : (
+              (joinedEvents.length > 0 ? joinedEvents : activities.slice(0, 2)).map((ev) => (
+                <View key={ev.id} style={styles.eventItem}>
+                  <View style={styles.eventRow}>
+                    <View style={[styles.dateBox, { backgroundColor: ev.accent }]}>
+                      <Text style={styles.dateMonth}>{ev.month}</Text>
+                      <Text style={styles.dateDay}>{ev.day}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.eventTitle}>{ev.title}</Text>
+                      <View style={styles.rowGap4}>
+                        <Clock size={12} color={colors.muted} />
+                        <Text style={styles.eventMeta}>
+                          {ev.timeLabel} · {ev.city}
+                        </Text>
+                      </View>
+                    </View>
+                    <Badge label={ev.isGoing ? 'Going' : 'Open'} tone={ev.isGoing ? 'green' : 'neutral'} />
+                  </View>
+
+                  <View style={styles.eventFooter}>
+                    <Text style={styles.eventGoingText}>{ev.goingCount} members going</Text>
+                    <Pressable onPress={() => toggleRsvp(ev.id)}>
+                      <Text style={styles.linkText}>{ev.isGoing ? 'Leave' : 'Join Event'}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))
+            )}
 
             <Pressable onPress={() => navigate('activities')} style={styles.addEventRow}>
               <Plus size={14} color={colors.brand} />
