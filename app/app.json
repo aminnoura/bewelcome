@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "BeWelcome",
+    "slug": "bewelcome",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.bewelcome.app"
+    },
+    "android": {
+      "package": "org.bewelcome.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "name": "BeWelcome — Hospitality Exchange"
+    }
+  }
+}
