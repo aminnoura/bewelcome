@@ -1,0 +1,99 @@
+<?php
+
+namespace App\Controller\Admin;
+
+use App\Entity\Member;
+use App\Form\LogFormType;
+use App\Model\LogModel;
+use App\Repository\MemberRepository;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\NonUniqueResultException;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
+
+class LogController extends AbstractController
+{
+    /**
+     * @throws NonUniqueResultException
+     * @throws AccessDeniedException
+     */
+    #[Route(path: '/admin/logs', name: 'admin_logs_overview')]
+    public function showOverview(Request $request, LogModel $logModel, EntityManagerInterface $entityManager): Response
+    {
+        if (!$this->isGranted(Member::ROLE_ADMIN_LOGS)) {
+            throw $this->createAccessDeniedException('You need to have Logs right to access this.');
+        }
+
+        $member = null;
+        /** @var Member $logViewer */
+        $logViewer = $this->getUser();
+        $page = $request->query->get('page', 1);
+        $limit = $request->query->get('limit', 20);
+        // the filter form (name log) sends log[types][] and log[username]
+        $filter = $request->query->all('log');
+        $types = $filter['types'] ?? [];
+        $username = $filter['username'] ?? null;
+
+        $logTypes = $logModel->getLogTypes($logViewer);
+        if (1 === \count($logTypes)) {
+            $request->query->set('types', $logTypes);
+            $types = $logTypes;
+        }
+        if (empty($types)) {
+            $types = $logTypes;
+        }
+        $logForm = $this->createForm(LogFormType::class, [
+            'logTypes' => $logTypes,
+        ]);
+        $logForm->handleRequest($request);
+
+        $selected = [];
+        if ($logForm->isSubmitted() && $logForm->isValid()) {
+            $data = $logForm->getData();
+            $selected = array_values($data['types'] ?? []);
+            $types = [] === $selected ? $logTypes : $selected;
+            $username = $data['username'];
+        }
+        if (!empty($username)) {
+            /** @var MemberRepository $memberRepository */
+            $memberRepository = $entityManager->getRepository(Member::class);
+            $member = $memberRepository->loadUserByUsername($username);
+        }
+
+        $logs = $logModel->getFilteredLogs($types, $member, $page, $limit);
+
+        return $this->render('admin/logs/index.html.twig', [
+            'logs' => $logs,
+            'log_types' => array_values($logTypes),
+            'selected' => $selected,
+            'username' => (string) $username,
+            'filters' => true,
+        ]);
+    }
+
+    /**
+     * @throws AccessDeniedException
+     *
+     * @return Response
+     */
+    #[Route(path: '/admin/logs/groups', name: 'admin_groups_logs')]
+    public function showGroupLogs(Request $request, LogModel $logModel)
+    {
+        if (!$this->isGranted(Member::ROLE_ADMIN_FORUMMODERATOR)) {
+            throw $this->createAccessDeniedException('You need to have Logs right to access this.');
+        }
+
+        $page = $request->query->get('page', 1);
+        $limit = $request->query->get('limit', 20);
+
+        $logs = $logModel->getFilteredLogs(['Group'], null, $page, $limit);
+
+        return $this->render('admin/logs/index.html.twig', [
+            'logs' => $logs,
+            'filters' => false,
+        ]);
+    }
+}

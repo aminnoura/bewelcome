@@ -1,0 +1,152 @@
+{
+    "name": "bewelcome/rox",
+    "description": "The source code that drives bewelcome.org",
+    "homepage": "https://www.bewelcome.org/",
+    "type": "project",
+    "license": "GPL",
+    "require": {
+        "php": ">=8.5",
+        "ext-curl": "*",
+        "ext-exif": "*",
+        "ext-fileinfo": "*",
+        "ext-gd": "*",
+        "ext-intl": "*",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*",
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*",
+        "ext-session": "*",
+        "ext-xmlwriter": "*",
+        "ext-zip": "*",
+        "anthonymartin/geo-location": "^3.0",
+        "babdev/pagerfanta-bundle": "4.*",
+        "beberlei/doctrineextensions": "^1.3",
+        "bjeavons/zxcvbn-php": "^1.3",
+        "doctrine/doctrine-bundle": "^3.0.0",
+        "doctrine/doctrine-migrations-bundle": "^4.0",
+        "doctrine/orm": "^3.3",
+        "eluceo/ical": "^2.5",
+        "exercise/htmlpurifier-bundle": "5.*",
+        "ezyang/htmlpurifier": "^4.0",
+        "gregwar/captcha-bundle": "^3.0",
+        "hidehalo/nanoid-php": "^2.0",
+        "intervention/image": "^4.0",
+        "jfcherng/php-levenshtein-distance": "*",
+        "judev/php-htmltruncator": "^1.2",
+        "longitude-one/doctrine-spatial": "^6.0",
+        "manticoresoftware/manticoresearch-php": "^4.0",
+        "minishlink/web-push": "^11.0",
+        "nelmio/cors-bundle": "^2.1",
+        "nelmio/security-bundle": "3.*",
+        "nesbot/carbon": "3.*",
+        "nyholm/psr7": "^1.8",
+        "pagerfanta/pagerfanta": "^v4.4.0",
+        "phpdocumentor/type-resolver": "^1.12",
+        "phpstan/phpdoc-parser": "^2.3",
+        "ramsey/uuid-doctrine": "2.*",
+        "sebastian/diff": "^9",
+        "stof/doctrine-extensions-bundle": "^1.7",
+        "symfony/asset": "8.2.*",
+        "symfony/cache": "8.2.*",
+        "symfony/debug-bundle": "8.2.*",
+        "symfony/dotenv": "8.2.*",
+        "symfony/expression-language": "8.2.*",
+        "symfony/flex": "^2",
+        "symfony/form": "8.2.*",
+        "symfony/framework-bundle": "8.2.*",
+        "symfony/http-client": "8.2.*",
+        "symfony/lock": "8.2.*",
+        "symfony/mailer": "8.2.*",
+        "symfony/monolog-bundle": "^4.0",
+        "symfony/password-hasher": "8.2.*",
+        "symfony/property-access": "8.2.*",
+        "symfony/property-info": "8.2.*",
+        "symfony/rate-limiter": "8.2.*",
+        "symfony/runtime": "8.2.*",
+        "symfony/security-bundle": "8.2.*",
+        "symfony/serializer": "8.2.*",
+        "symfony/stopwatch": "8.2.*",
+        "symfony/translation": "8.2.*",
+        "symfony/twig-bundle": "8.2.*",
+        "symfony/ux-translator": "3.x-dev",
+        "symfony/validator": "8.2.*",
+        "symfony/var-dumper": "8.2.*",
+        "symfony/web-link": "8.2.*",
+        "symfony/web-profiler-bundle": "8.2.*",
+        "symfony/webpack-encore-bundle": "^2.2.0",
+        "theofidry/alice-data-fixtures": "^1.8",
+        "twig/cssinliner-extra": "^3.0",
+        "twig/extra-bundle": "^3.0",
+        "twig/intl-extra": "^3.0",
+        "twig/twig": "^3.0",
+        "willdurand/negotiation": "^3.1",
+        "xemlock/htmlpurifier-html5": "^0.1.10"
+    },
+    "conflict": {
+        "symfony/symfony": "*"
+    },
+    "require-dev": {
+        "cmgmyr/phploc": "^8.0",
+        "dama/doctrine-test-bundle": "^8.0",
+        "doctrine/data-fixtures": "^2.0",
+        "fakerphp/faker": "^v1.14",
+        "friendsofphp/php-cs-fixer": "^3.0",
+        "hautelook/alice-bundle": "^2.0",
+        "infection/infection": "^0.35",
+        "mockery/mockery": "^1.4.0",
+        "nelmio/alice": "^3.0",
+        "phpstan/extension-installer": "*",
+        "phpstan/phpstan": "*",
+        "phpstan/phpstan-doctrine": "*",
+        "phpstan/phpstan-mockery": "^2.0",
+        "phpstan/phpstan-symfony": "*",
+        "phpunit/phpunit": "^13",
+        "rector/rector": "^2.1",
+        "squizlabs/php_codesniffer": "^4",
+        "symfony/browser-kit": "8.1.*",
+        "symfony/css-selector": "8.1.*",
+        "symfony/maker-bundle": "^1.8",
+        "systemsdk/phpcpd": "^9"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "App\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "auto-scripts": {
+            "cache:clear": "symfony-cmd",
+            "assets:install %PUBLIC_DIR%": "symfony-cmd"
+        },
+        "post-install-cmd": [
+            "@auto-scripts"
+        ],
+        "post-update-cmd": [
+            "@auto-scripts"
+        ]
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "infection/extension-installer": true,
+            "phpstan/extension-installer": true,
+            "symfony/flex": true,
+            "symfony/runtime": true,
+            "php-http/discovery": true
+        }
+    },
+    "extra": {
+        "symfony": {
+            "allow-contrib": true,
+            "require": "8.2.*"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

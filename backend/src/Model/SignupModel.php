@@ -1,0 +1,259 @@
+<?php
+
+namespace App\Model;
+
+use App\Doctrine\GroupMembershipStatusType;
+use App\Doctrine\LanguageLevelType;
+use App\Doctrine\MemberStatusType;
+use App\Entity\Address;
+use App\Entity\Group;
+use App\Entity\GroupMembership;
+use App\Entity\Language;
+use App\Entity\Location;
+use App\Entity\Member;
+use App\Entity\MemberLanguageLevel;
+use App\Entity\MemberPreference;
+use App\Entity\MemberTranslation;
+use App\Entity\Message;
+use App\Entity\Preference;
+use App\Entity\Subject;
+use App\Service\Mailer;
+use Doctrine\ORM\EntityManagerInterface;
+use Hidehalo\Nanoid\Client;
+use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
+
+class SignupModel
+{
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        private readonly PasswordHasherFactoryInterface $passwordHasherFactory,
+        private readonly TranslatorInterface $translator,
+        private readonly Mailer $mailer,
+    ) {
+    }
+
+    public function createAccount(array $signupData): Member
+    {
+        $locale = $signupData['locale'];
+        $member = new Member();
+        $member->setStatus(MemberStatusType::AWAITING_MAIL_CONFIRMATION);
+        $member->setUsername($signupData['username']);
+        $member->setEmail($signupData['email']);
+        $member->setLocale($locale);
+
+        $nanoClient = new Client();
+        $member->setRegistrationKey($nanoClient->generateId(16, Client::MODE_DYNAMIC));
+
+        $passwordHasher = $this->passwordHasherFactory->getPasswordHasher($member);
+        $hashedPassword = $passwordHasher->hash($signupData['password']);
+
+        $member->setPassword($hashedPassword);
+        $member->addTranslation(
+            new MemberTranslation(
+                'en',
+                'ProfileLanguage',
+                'en'
+            )
+        );
+
+        if ('en' !== $locale) {
+            $member->addTranslation(
+                new MemberTranslation(
+                    $locale,
+                    'ProfileLanguage',
+                    $locale
+                )
+            );
+        }
+
+        $this->entityManager->persist($member);
+        $this->joinBeWelcomeGroup($member);
+
+        $memberRepository = $this->entityManager->getRepository(Member::class);
+        $admin = $memberRepository->findOneBy(['username' => 'bwadmin']);
+        if (null !== $admin) {
+            $firstMessage = new Message();
+            $subject = new Subject();
+            $subjectText = $this->translator->trans('signup.welcome.subject', ['username' => $member->getUsername()]);
+            $subject->setSubject($subjectText);
+            $messageText = $this->translator->trans('signup.welcome.body', ['username' => $member->getUsername()]);
+            $firstMessage
+                ->setSubject($subject)
+                ->setMessage($messageText)
+                ->setReceiver($member)
+                ->setSender($admin)
+            ;
+
+            $this->entityManager->persist($subject);
+            $this->entityManager->persist($firstMessage);
+        }
+
+        $this->entityManager->flush();
+
+        $parameters = [
+            'subject' => 'signup.confirm.email',
+            'username' => $signupData['username'],
+            'email_address' => $signupData['email'],
+            'key' => $member->getRegistrationKey(),
+        ];
+
+        $this->mailer->sendSignupEmail($member, 'signup', $parameters);
+
+        return $member;
+    }
+
+    public function updateMember(Member $member, array $data): void
+    {
+        $location = $this->entityManager->getRepository(Location::class)->findOneBy([
+            'geonameId' => $data['location']['geoname_id'],
+        ]);
+
+        $address = new Address();
+        $address
+            ->setActive(true)
+            ->setLocation($location)
+            ->setLatitude($data['location']['latitude'])
+            ->setLongitude($data['location']['longitude']);
+
+        $member
+            ->setName($data['name'])
+            ->setShortName($data['short_name'])
+            ->setBirthdate($data['birthdate'])
+            ->setGender($data['gender'])
+            ->setAccommodation($data['accommodation'])
+            ->addAddress($address)
+            ->setHostingInterest($data['hosting_interest'] ?? null)
+        ;
+
+        if ($data['registration_key'] === $member->getRegistrationKey()) {
+            $member->setRegistrationKey(null);
+            $member->setStatus(MemberStatusType::ACTIVE);
+        } else {
+            $member->setStatus(MemberStatusType::ACCOUNT_ACTIVATED);
+        }
+
+        $translations = $member->getTranslations();
+        foreach ($data['mother_tongue'] as $motherTongue) {
+            // for each mother tongue create a profile version if the language is a written language
+            if ($motherTongue->isWrittenLanguage()) {
+                $languageShortCode = $motherTongue->getShortCode();
+                if (!isset($translations[$languageShortCode]['ProfileLanguage'])) {
+                    $member->addTranslation(new MemberTranslation($languageShortCode, 'ProfileLanguage', $languageShortCode));
+                }
+            }
+
+            // Also add entry for language level in database
+            $languageLevel = new MemberLanguageLevel();
+            $languageLevel->setLanguage($motherTongue);
+            $languageLevel->setLevel(LanguageLevelType::MOTHER_TONGUE);
+            $languageLevel->setMember($member);
+
+            $this->entityManager->persist($languageLevel);
+        }
+
+        $this->entityManager->persist($member);
+
+        $newsletterValue = $data['newsletters'] ? 'Yes' : 'No';
+        $preference = $this->entityManager->getRepository(Preference::class)->findOneBy([
+            'codename' => Preference::NEWSLETTERS_VIA_EMAIL,
+        ]);
+
+        $newsletterPreference = new MemberPreference();
+        $newsletterPreference
+            ->setMember($member)
+            ->setPreference($preference)
+            ->setValue($newsletterValue)
+        ;
+        $this->entityManager->persist($newsletterPreference);
+
+        $localeEventsValue = $data['local_events'] ? 'Yes' : 'No';
+        $preference = $this->entityManager->getRepository(Preference::class)->findOneBy([
+            'codename' => Preference::LOCAL_EVENT_NOTIFICATIONS,
+        ]);
+
+        $localEventsPreference = new MemberPreference();
+        $localEventsPreference
+            ->setMember($member)
+            ->setPreference($preference)
+            ->setValue($localeEventsValue)
+        ;
+        $this->entityManager->persist($localEventsPreference);
+
+        $preference = $this->entityManager->getRepository(Preference::class)->findOneBy([
+            'codename' => Preference::TRIP_NOTIFICATIONS,
+        ]);
+
+        $tripNotificationsPreference = new MemberPreference();
+        $tripNotificationsPreference
+            ->setMember($member)
+            ->setPreference($preference)
+            ->setValue($data['trips_notifications'])
+        ;
+        $this->entityManager->persist($tripNotificationsPreference);
+
+        $preference = $this->entityManager->getRepository(Preference::class)->findOneBy([
+            'codename' => Preference::ACTIVITY_NOTIFICATIONS,
+        ]);
+        $activityNotificationsPreference = new MemberPreference();
+        $activityNotificationsPreference
+            ->setMember($member)
+            ->setPreference($preference)
+            ->setValue($data['activities_notifications'] ?? Preference::ACTIVITY_NOTIFICATIONS_NEVER)
+        ;
+        $this->entityManager->persist($activityNotificationsPreference);
+
+        $this->entityManager->flush();
+    }
+
+    public function checkUsername(string $username): bool
+    {
+        $memberRepository = $this->entityManager->getRepository(Member::class);
+        $member = $memberRepository->findOneBy(['username' => $username]);
+
+        if (null !== $member) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Email is either taken directly or is currently changed and awaiting confirmation.
+     */
+    public function checkEmailAddress(string $email): bool
+    {
+        $memberRepository = $this->entityManager->getRepository(Member::class);
+        $member = $memberRepository->findOneBy(['email' => $email]);
+
+        if (null !== $member) {
+            return false;
+        }
+
+        $member = $memberRepository->findOneBy(['newEmail' => $email]);
+        if (null !== $member) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * New members are in the BeWelcome group from the start, with notifications on: they get the agora's posts and
+     * can leave the group or unsubscribe from its notifications.
+     */
+    private function joinBeWelcomeGroup(Member $member): void
+    {
+        $beWelcome = $this->entityManager->find(Group::class, Group::BEWELCOME);
+        if (null === $beWelcome) {
+            return;
+        }
+
+        $membership = new GroupMembership()
+            ->setMember($member)
+            ->setGroup($beWelcome)
+            ->setStatus(GroupMembershipStatusType::CURRENT_MEMBER)
+            ->setNotificationsEnabled(true);
+        $this->entityManager->persist($membership);
+    }
+}

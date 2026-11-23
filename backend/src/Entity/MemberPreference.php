@@ -1,0 +1,200 @@
+<?php
+
+namespace App\Entity;
+
+use DateTime;
+use Doctrine\ORM\Mapping as ORM;
+
+/**
+ * Do not check entities with PHPMD.
+ *
+ * @SuppressWarnings("PHPMD")
+ */
+#[ORM\Table(name: 'memberspreferences')]
+#[ORM\Index(name: 'memberspreferences_members', columns: ['IdMember', 'IdPreference'])]
+#[ORM\Index(name: 'memberspreferences_preferences', columns: ['IdPreference'])]
+#[ORM\Entity]
+#[ORM\HasLifecycleCallbacks]
+class MemberPreference
+{
+    /**
+     * @var Member
+     */
+    #[ORM\JoinColumn(name: 'IdMember', referencedColumnName: 'id', nullable: false)]
+    #[ORM\ManyToOne(targetEntity: Member::class, inversedBy: 'preferences')]
+    protected $member;
+
+    /**
+     * @var Preference
+     */
+    #[ORM\JoinColumn(name: 'IdPreference', referencedColumnName: 'id', nullable: false)]
+    #[ORM\ManyToOne(targetEntity: \Preference::class, fetch: 'EAGER')]
+    private $preference;
+
+    /**
+     * @var string
+     */
+    #[ORM\Column(name: 'Value', type: 'text', length: 65535, nullable: false)]
+    private $value;
+
+    /**
+     * @var DateTime
+     */
+    #[ORM\Column(name: 'updated', type: 'datetime', nullable: false)]
+    private $updated;
+
+    /**
+     * @var DateTime
+     */
+    #[ORM\Column(name: 'created', type: 'datetime', nullable: false)]
+    private $created;
+
+    /**
+     * @var int
+     */
+    #[ORM\Column(name: 'id', type: 'integer')]
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'IDENTITY')]
+    private $id;
+
+    /**
+     * Set member.
+     *
+     * @return MemberPreference
+     */
+    public function setMember(Member $member)
+    {
+        $this->member = $member;
+
+        return $this;
+    }
+
+    /**
+     * Get member.
+     *
+     * @return Member
+     */
+    public function getMember()
+    {
+        return $this->member;
+    }
+
+    /**
+     * Set preference.
+     *
+     * @return MemberPreference
+     */
+    public function setPreference(Preference $preference)
+    {
+        $this->preference = $preference;
+
+        return $this;
+    }
+
+    /**
+     * Get preference.
+     *
+     * @return Preference
+     */
+    public function getPreference()
+    {
+        return $this->preference;
+    }
+
+    /**
+     * Set value.
+     *
+     * @param string $value
+     *
+     * @return MemberPreference
+     */
+    public function setValue($value)
+    {
+        $this->value = $value;
+
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getValue()
+    {
+        return $this->value;
+    }
+
+    /**
+     * @param DateTime $updated
+     *
+     * @return MemberPreference
+     */
+    public function setUpdated($updated)
+    {
+        $this->updated = $updated;
+
+        return $this;
+    }
+
+    /**
+     * Get updated.
+     *
+     * @return DateTime
+     */
+    public function getUpdated()
+    {
+        return $this->updated;
+    }
+
+    /**
+     * Set created.
+     *
+     * @param DateTime $created
+     *
+     * @return MemberPreference
+     */
+    public function setCreated($created)
+    {
+        $this->created = $created;
+
+        return $this;
+    }
+
+    /**
+     * Get created.
+     *
+     * @return DateTime
+     */
+    public function getCreated()
+    {
+        return $this->created;
+    }
+
+    /**
+     * Get id.
+     *
+     * @return int
+     */
+    public function getId()
+    {
+        return $this->id;
+    }
+
+    /**
+     * Triggered on insert.
+     */
+    #[ORM\PrePersist]
+    public function onPrePersist(): void
+    {
+        $this->created = new DateTime('now');
+        $this->updated = new DateTime('now');
+    }
+
+    /**
+     * Triggered on update.
+     */
+    #[ORM\PreUpdate]
+    public function onPreUpdate(): void
+    {
+        $this->updated = new DateTime('now');
+    }
+}

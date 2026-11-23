@@ -1,0 +1,22 @@
+<?php
+
+/**
+ * Created by PhpStorm.
+ * User: bla
+ * Date: 24.08.2018
+ * Time: 11:59.
+ */
+
+namespace App\Security;
+
+use Override;
+use Symfony\Component\Security\Core\Exception\AccountStatusException;
+
+class AccountBannedException extends AccountStatusException
+{
+    #[Override]
+    public function getMessageKey(): string
+    {
+        return 'Account has been banned.';
+    }
+}

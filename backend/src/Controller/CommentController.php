@@ -1,0 +1,400 @@
+<?php
+
+namespace App\Controller;
+
+use App\Doctrine\CommentAdminActionType;
+use App\Doctrine\CommentQualityType;
+use App\Entity\Comment;
+use App\Entity\CommentReport;
+use App\Entity\Member;
+use App\Entity\Preference;
+use App\Form\CommentType;
+use App\Form\CustomDataClass\ReportCommentRequest;
+use App\Form\ReportCommentType;
+use App\Model\CommentModel;
+use App\Model\ProfileModel;
+use App\Security\MemberVoter;
+use App\Service\Mailer;
+use App\Utilities\ActiveMemberTrait;
+use App\Utilities\ChangeProfilePictureGlobals;
+use App\Utilities\ProfileSubmenu;
+use App\Utilities\TranslatedFlashTrait;
+use App\Utilities\TranslatorTrait;
+use DateTime;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bridge\Doctrine\Attribute\MapEntity;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\Form\FormError;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+
+/**
+ * @SuppressWarnings("PHPMD.CyclomaticComplexity")
+ * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
+ * @SuppressWarnings("PHPMD.NPathComplexity")
+ *
+ * \todo Fix complexity
+ */
+class CommentController extends AbstractController
+{
+    use ActiveMemberTrait;
+    use TranslatedFlashTrait;
+    use TranslatorTrait;
+
+    public function __construct(
+        private readonly ProfileSubmenu $profileSubmenu,
+        private readonly ChangeProfilePictureGlobals $globals,
+    ) {
+    }
+
+    #[Route(
+        path: '/members/{to_member}/comment/{from_member}/report',
+        name: 'report_comment',
+        requirements: ['username' => '(?i:[a-z](?!.*[-_.][-_.])[a-z0-9-._]{2,18}[a-z0-9])']
+    )]
+    public function reportCommentAction(
+        Request $request,
+        #[MapEntity(mapping: ['to_member' => 'username'])] Member $toMember,
+        #[MapEntity(mapping: ['from_member' => 'username'])] Member $fromMember,
+        EntityManagerInterface $entityManager,
+        Mailer $mailer,
+    ): Response {
+        /** @var Member $member */
+        $member = $this->getUser();
+
+        if ($member !== $toMember) {
+            $this->addTranslatedFlash('notice', 'flash.comment.report.only.own');
+
+            return $this->redirectToRoute('profile_comments', ['username' => $member->getUsername()]);
+        }
+
+        $commentRepository = $entityManager->getRepository(Comment::class);
+        $comment = $commentRepository->findOneBy([
+            'toMember' => $toMember,
+            'fromMember' => $fromMember,
+        ]);
+
+        $form = $this->createForm(ReportCommentType::class, new ReportCommentRequest());
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            $data = $form->getData();
+            $feedback = trim(
+                str_replace(
+                    "\xc2\xa0",
+                    ' ',
+                    strip_tags(html_entity_decode((string) $data->feedback, \ENT_HTML5, 'UTF-8'))
+                )
+            );
+            if (empty($feedback)) {
+                // on the field, in the member's language (it was English, on top of the form)
+                $form->get('feedback')->addError(new FormError($this->translator->trans('comment.report.empty', [], 'validators')));
+            } else {
+                $success = $mailer->sendCommentReportedFeedbackEmail(
+                    $member,
+                    [
+                        'subject' => 'Comment report',
+                        'comment' => $comment,
+                        'feedback' => $feedback,
+                    ]
+                );
+
+                if ($success) {
+                    $comment->setAdminAction(CommentAdminActionType::ADMIN_CHECK);
+                    // the volunteers read it in the comments tool next to the comment
+                    $entityManager->persist(new CommentReport($comment, $member, $feedback));
+                    $entityManager->persist($comment);
+                    $entityManager->flush();
+
+                    $this->addTranslatedFlash('notice', 'flash.feedback.safetyteam');
+
+                    return $this->redirectToRoute('profile_comments', ['username' => $member->getUsername()]);
+                }
+
+                $this->addTranslatedFlash('error', 'flash.feedback.not.sent');
+            }
+        }
+
+        return $this->render('member/report.comment.html.twig', [
+            'form' => $form->createView(),
+            'comment' => $comment,
+            'member' => $member,
+        ]);
+    }
+
+    #[Route(
+        path: '/members/{username:member}/comment/add',
+        name: 'add_comment',
+        requirements: ['username' => '(?i:[a-z](?!.*[-_.][-_.])[a-z0-9-._]{2,18}[a-z0-9])']
+    )]
+    public function addComment(
+        Request $request,
+        Member $member,
+        CommentModel $commentModel,
+        Mailer $mailer,
+        EntityManagerInterface $entityManager,
+    ): Response {
+        /** @var Member $loggedInMember */
+        $loggedInMember = $this->getUser();
+
+        if ($loggedInMember === $member) {
+            return $this->redirectToRoute('members_profile', ['username' => $member->getUsername()]);
+        }
+
+        if ($refused = $this->refusedUntilActive($loggedInMember, 'flash.comment.not.active', $this->redirectToRoute('members_profile', ['username' => $member->getUsername()]))) {
+            return $refused;
+        }
+
+        if (!$this->isGranted(MemberVoter::MEMBER_VIEW, $member)) {
+            return $this->redirectToRoute('members_profile', ['username' => $member->getUsername()]);
+        }
+
+        $comment = $commentModel->getCommentForMemberPair($loggedInMember, $member);
+
+        if (null !== $comment) {
+            // In the profile's side panel (?embed=1) the edit form opens there too
+            return $this->redirectToRoute('edit_comment', array_filter([
+                'username' => $member->getUsername(),
+                'embed' => $request->query->getBoolean('embed') ? 1 : null,
+            ]));
+        }
+
+        $preferenceRepository = $entityManager->getRepository(Preference::class);
+
+        /** @var Preference $preference */
+        $preference = $preferenceRepository->findOneBy(['codename' => Preference::READ_COMMENT_GUIDELINES]);
+        $memberPreference = $loggedInMember->getMemberPreference($preference);
+        $showCommentGuideline = ('0' === $memberPreference->getValue());
+
+        $form = $this->createForm(CommentType::class, null, [
+            'to_member' => $member,
+            'show_comment_guideline' => $showCommentGuideline,
+        ]);
+
+        $form->handleRequest($request);
+        if ($form->isSubmitted() && $form->isValid()) {
+            /** @var Comment $comment */
+            $comment = $form->getData();
+            if (
+                $commentModel->checkCommentSpam($loggedInMember, $comment)
+                || $commentModel->checkForEmailAddress($comment)
+                || $commentModel->checkForPhoneNumber($comment)
+            ) {
+                $form->addError(new FormError($this->translator->trans('commentsomethingwentwrong')));
+            } else {
+                $comment->setToMember($member);
+                $comment->setFromMember($loggedInMember);
+
+                if (CommentQualityType::NEGATIVE === $comment->getQuality()) {
+                    $comment->setAdminAction(CommentAdminActionType::ADMIN_CHECK);
+                    $comment->setEditingAllowed(false);
+                }
+                $entityManager->persist($comment);
+
+                // Mark comment guidelines as read and hide the checkbox for the future
+                $memberPreference->setValue('1');
+                $entityManager->persist($memberPreference);
+                $entityManager->flush();
+
+                $mailer->sendNewCommentNotification($comment);
+
+                $this->addTranslatedFlash(
+                    'notice',
+                    'flash.comment.added',
+                    [
+                        'username' => $member->getUsername(),
+                    ]
+                );
+                $this->addFlash('plausible_event', 'Review Written');
+
+                return $this->redirectToRoute('profile_comments', ['username' => $member->getUsername()]);
+            }
+        }
+
+        return $this->render('/profile/comment.add.html.twig', [
+            'form' => $form->createView(),
+            'member' => $member,
+            'globals_js_json' => $this->globals->getGlobalsJsAsJson($loggedInMember, $member),
+            'submenu' => $this->profileSubmenu->getSubmenu($loggedInMember, $member, ['active' => 'comment']),
+        ]);
+    }
+
+    /**
+     * @return Response|RedirectResponse
+     */
+    #[Route(
+        path: '/members/{username:member}/comment/edit',
+        name: 'edit_comment',
+        requirements: ['username' => '(?i:[a-z](?!.*[-_.][-_.])[a-z0-9-._]{2,18}[a-z0-9])']
+    )]
+    public function editComment(
+        Request $request,
+        Member $member,
+        CommentModel $commentModel,
+        Mailer $mailer,
+        EntityManagerInterface $entityManager,
+    ) {
+        /** @var Member $loggedInMember */
+        $loggedInMember = $this->getUser();
+
+        if ($loggedInMember === $member) {
+            return $this->redirectToRoute('members_profile', ['username' => $member->getUsername()]);
+        }
+
+        if (!$this->isGranted(MemberVoter::MEMBER_VIEW, $member)) {
+            return $this->redirectToRoute('members_profile', ['username' => $member->getUsername()]);
+        }
+
+        $comment = $commentModel->getCommentForMemberPair($loggedInMember, $member);
+        if (null === $comment) {
+            return $this->redirectToRoute('add_comment', ['username' => $member->getUsername()]);
+        }
+
+        if (!$comment->getEditingAllowed()) {
+            $this->addTranslatedFlash('notice', 'comment.editing.not.allowed', []);
+
+            return $this->redirectToRoute('members_profile', ['username' => $member->getUsername()]);
+        }
+
+        $checkForExperience = false;
+        $originalComment = clone $comment;
+        $form = $this->createForm(
+            CommentType::class,
+            $comment,
+            [
+                'to_member' => $member,
+                'show_comment_guideline' => false,
+                'show_new_experience' => true,
+            ]
+        );
+
+        $form->handleRequest($request);
+        if ($form->isSubmitted() && $form->isValid()) {
+            /** @var Comment $comment */
+            $comment = $form->getData();
+            $checkForExperience = $commentModel->checkIfNewExperience($originalComment, $comment);
+            $newExperience = $form['new_experience']->getData();
+            $changedToNegative =
+                (CommentQualityType::NEGATIVE !== $originalComment->getQuality())
+                && (CommentQualityType::NEGATIVE === $comment->getQuality())
+            ;
+            $changedToPositive =
+                (CommentQualityType::POSITIVE !== $originalComment->getQuality())
+                && (CommentQualityType::POSITIVE === $comment->getQuality())
+            ;
+            if ($newExperience || $changedToNegative || $changedToPositive) {
+                $comment->setUpdated(new DateTime());
+            }
+
+            if (CommentQualityType::NEGATIVE === $comment->getQuality()) {
+                $comment->setAdminAction(CommentAdminActionType::ADMIN_CHECK);
+                $comment->setEditingAllowed(false);
+            }
+
+            $entityManager->persist($comment);
+            $entityManager->flush();
+
+            if ($comment->getShowToOtherMembers()) {
+                $mailer->sendCommentUpdateNotification($comment);
+            }
+
+            if ($newExperience || $changedToNegative || $changedToPositive) {
+                return $this->redirectToRoute('profile_comments', ['username' => $loggedInMember->getUsername()]);
+            }
+
+            // Saved, and nothing to ask about a new experience: back to the comments
+            if (!$checkForExperience) {
+                return $this->redirectToRoute('profile_comments', ['username' => $member->getUsername()]);
+            }
+        }
+
+        return $this->render('/profile/comment.edit.html.twig', [
+            'form' => $form->createView(),
+            'member' => $member,
+            'check_experience' => $checkForExperience,
+            'globals_js_json' => $this->globals->getGlobalsJsAsJson($loggedInMember, $member),
+            'submenu' => $this->profileSubmenu->getSubmenu($loggedInMember, $member, ['active' => 'comment']),
+        ]);
+    }
+
+    #[Route(
+        path: '/members/{from_member}/comment/{to_member}/new',
+        name: 'comment_new_experience',
+        requirements: ['username' => '(?i:[a-z](?!.*[-_.][-_.])[a-z0-9-._]{2,18}[a-z0-9])']
+    )]
+    public function setNewExperienceForComment(
+        #[MapEntity(mapping: ['from_member' => 'username'])] Member $fromMember,
+        #[MapEntity(mapping: ['to_member' => 'username'])] Member $toMember,
+        CommentModel $commentModel,
+        EntityManagerInterface $entityManager,
+    ): RedirectResponse {
+        /** @var Member $loggedInMember */
+        $loggedInMember = $this->getUser();
+        if ($loggedInMember !== $fromMember) {
+            $this->redirectToRoute('members_profile', ['username' => $toMember->getUsername()]);
+        }
+
+        $comment = $commentModel->getCommentForMemberPair($fromMember, $toMember);
+        if (null === $comment) {
+            return $this->redirectToRoute('members_profile', ['username' => $toMember->getUsername()]);
+        }
+
+        $comment->setUpdated(new DateTime());
+        $entityManager->persist($comment);
+        $entityManager->flush();
+
+        $this->addTranslatedFlash('notice', 'comment.set.new.experience');
+
+        return $this->redirectToRoute('profile_comments', ['username' => $fromMember->getUsername()]);
+    }
+
+    #[Route(
+        path: '/members/{username:member}/comments/{type}',
+        name: 'profile_comments',
+        requirements: [
+            'username' => '(?i:[a-z](?!.*[-_.][-_.])[a-z0-9-._]{2,18}[a-z0-9])',
+            'type' => 'positive|neutral|negative|all',
+        ]
+    )]
+    public function showCommentsForMember(
+        Member $member,
+        ProfileModel $profileModel,
+        EntityManagerInterface $entityManager,
+        string $type = 'all',
+    ): Response {
+        /** @var Member $loggedInMember */
+        $loggedInMember = $this->getUser();
+
+        $commentRepository = $entityManager->getRepository(Comment::class);
+        // Only the comments the member received, each with the member's answer if any:
+        // the ones they wrote to others are shown on those members' profiles.
+        $comments = array_filter(
+            $commentRepository->getAllCommentsMember($member, $type),
+            static fn (array $comment) => isset($comment['from'])
+        );
+        $commentCounts = $commentRepository->getCommentsCountMemberByQuality($member);
+
+        return $this->render('profile/comments.html.twig', [
+            'use_lightbox' => false,
+            'status_form' => $profileModel->getStatusForm($loggedInMember, $member),
+            'type' => $type,
+            'member' => $member,
+            'comments' => $comments,
+            'comments_count' => $commentCounts,
+            'submenu' => $this->profileSubmenu->getSubmenu($loggedInMember, $member, ['active' => 'comments']),
+        ]);
+    }
+
+    /**
+     * The old URLs of a member's comments and of writing or editing a comment.
+     */
+    #[Route(path: '/members/{username}/comments/', name: 'profile_comments_old', methods: ['GET'])]
+    #[Route(path: '/members/{username}/comments/add', name: 'add_comment_old', methods: ['GET'], defaults: ['target' => 'add_comment'])]
+    #[Route(path: '/members/{username}/comments/edit', name: 'edit_comment_old', methods: ['GET'], defaults: ['target' => 'edit_comment'])]
+    public function redirectLegacyComments(string $username, string $target = 'profile_comments'): RedirectResponse
+    {
+        return $this->redirectToRoute($target, ['username' => $username], Response::HTTP_MOVED_PERMANENTLY);
+    }
+}

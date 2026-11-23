@@ -1,0 +1,141 @@
+<?php
+
+namespace App\Controller;
+
+use App\Entity\FeedbackCategory;
+use App\Entity\Member;
+use App\Form\FeedbackFormType;
+use App\Model\AboutModel;
+use App\Utilities\TranslatedFlashTrait;
+use App\Utilities\TranslatorTrait;
+use Carbon\Carbon;
+use Symfony\Component\Form\FormError;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Contracts\Translation\TranslatorInterface;
+
+class FeedbackController extends AboutBaseController
+{
+    use TranslatedFlashTrait;
+    use TranslatorTrait;
+
+    /**
+     * @SuppressWarnings("PHPMD.CyclomaticComplexity")
+     *
+     * \todo Fix complexity
+     */
+    #[Route(path: '/about/feedback', name: 'contactus')]
+    #[Route(path: '/contact')]
+    #[Route(path: '/contactus')]
+    #[Route(path: '/support')]
+    #[Route(path: '/feedback', name: 'feedback')]
+    public function feedback(Request $request, AboutModel $aboutModel, TranslatorInterface $translator): Response
+    {
+        $noModal = $request->query->getBoolean('no', false);
+
+        $member = $this->getUser();
+        $categories = $aboutModel->getFeedbackCategories();
+        $categoryId = $request->query->get('IdCategory', null);
+        $category = (null !== $categoryId) ? $categories[$categoryId] : null;
+        $messageId = $request->query->get('messageId', null);
+        $username = $request->query->get('username', null);
+        $feedbackQuestion = '';
+        if (null !== $username) {
+            $feedbackQuestion = $translator->trans('profile.report.text');
+            $feedbackQuestion = \sprintf($feedbackQuestion, $username);
+        }
+        $form = $this->createForm(
+            FeedbackFormType::class,
+            [
+                'IdCategory' => $category,
+                'FeedbackQuestion' => $feedbackQuestion,
+                'FeedbackEmail' => $member instanceof Member ? $member->getEmail() : null,
+            ],
+            [
+                'categories' => $categories,
+                'member' => $member,
+                'allow_extra_fields' => true,
+            ]
+        );
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            $data = $form->getData();
+            if ($data['FeedbackQuestion'] === $feedbackQuestion) {
+                $form->get('FeedbackQuestion')->addError(
+                    new FormError(
+                        $translator->trans('feedback.missing.info', [], 'validators')
+                    )
+                );
+            }
+
+            $reply = !$data['no_reply_needed'];
+            if ($reply && null === $data['FeedbackEmail']) {
+                $form
+                    ->addError(
+                        new FormError(
+                            $translator->trans('form.error.feedback.email.needed', [], 'validators')
+                        )
+                    )
+                ;
+            }
+            // Recheck validity as we might have set an error before.
+            if ($form->isValid()) {
+                $data['member'] = $member;
+                $data['browser'] = $request->headers->get('User-Agent');
+                $data['version'] = 'no version set';
+                if (file_exists('../VERSION')) {
+                    $version = trim(file_get_contents('../VERSION'));
+                    $versionCreated = Carbon::createFromTimestamp(filemtime('../VERSION'));
+                    $data['version'] = $version . ' (' . $versionCreated . ')';
+                }
+
+                $data['host'] = $request->headers->get('Host');
+                // mailed to the team of the category only, not stored: nothing on the site shows it
+                $aboutModel->sendFeedbackEmail($data);
+
+                $this->addTranslatedFlash('notice', 'feedback.thank.you');
+
+                return $this->redirectToRoute('feedback_received');
+            }
+        }
+
+        return $this->render('about/feedback.html.twig', [
+            'form' => $form->createView(),
+            'no_modal' => $noModal,
+            'messageId' => $messageId,
+            'safety_category' => $this->categoryId($categories, 'safety_and_abuse'),
+            'submenu' => [
+                'items' => $this->getSubMenuItems($request->getLocale()),
+                'active' => 'about_feedback',
+            ],
+        ]);
+    }
+
+    #[Route(path: '/feedback/received', name: 'feedback_received')]
+    public function feedbackReceived(Request $request): Response
+    {
+        return $this->render('about/feedback.received.html.twig', [
+            'submenu' => [
+                'items' => $this->getSubMenuItems($request->getLocale()),
+                'active' => 'about_feedback',
+            ],
+        ]);
+    }
+
+    /**
+     * @param array<int, FeedbackCategory> $categories
+     */
+    private function categoryId(array $categories, string $name): ?int
+    {
+        foreach ($categories as $id => $category) {
+            // the names are capitalised on some databases (Safety_and_abuse)
+            if (0 === strcasecmp($name, (string) $category->getName())) {
+                return $id;
+            }
+        }
+
+        return null;
+    }
+}

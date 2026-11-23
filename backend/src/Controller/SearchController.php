@@ -1,0 +1,240 @@
+<?php
+
+namespace App\Controller;
+
+use AnthonyMartin\GeoLocation\GeoPoint;
+use App\Doctrine\GroupMembershipStatusType;
+use App\Doctrine\LegOptionsType;
+use App\Entity\Comment;
+use App\Entity\GalleryImage;
+use App\Entity\Group;
+use App\Entity\Leg;
+use App\Entity\Member;
+use App\Entity\Preference;
+use App\Form\CustomDataClass\SearchFormRequest;
+use App\Form\SearchFormType;
+use App\Pagerfanta\SearchAdapter;
+use App\Repository\CommentRepository;
+use App\Repository\GalleryImageRepository;
+use App\Repository\MemberRepository;
+use App\Security\MemberVoter;
+use Doctrine\ORM\EntityManagerInterface;
+use Pagerfanta\Pagerfanta;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\Form\FormFactoryInterface;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Contracts\Translation\TranslatorInterface;
+use TypeError;
+
+/**
+ * Handles all search-related requests for members and locations.
+ */
+class SearchController extends AbstractController
+{
+    /** At most this many members on the map of a search (the list stays paged) */
+    private const int MAP_MEMBERS = 2000;
+
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+    ) {
+    }
+
+    /**
+     * The old address of the member search.
+     */
+    #[Route(path: '/search', name: 'search_legacy', methods: ['GET'])]
+    public function legacySearch(): RedirectResponse
+    {
+        return $this->redirectToRoute('search_locations', [], Response::HTTP_MOVED_PERMANENTLY);
+    }
+
+    #[Route(path: '/search/locations', name: 'search_locations')]
+    public function searchLocations(
+        Request $request,
+        MemberRepository $memberRepository,
+        TranslatorInterface $translator,
+        FormFactoryInterface $formFactory,
+    ): Response {
+        $pager = null;
+        $results = null;
+
+        /** @var Member $member */
+        $member = $this->getUser();
+
+        $preferenceRepository = $this->entityManager->getRepository(Preference::class);
+
+        /** @var Preference $showMapPreference */
+        $showMapPreference = $preferenceRepository->findOneBy(['codename' => Preference::SHOW_MAP]);
+        $showMap = $member->getMemberPreferenceValue($showMapPreference);
+
+        /** @var Preference $showOptionsPreference */
+        $showOptionsPreference = $preferenceRepository->findOneBy(['codename' => Preference::SHOW_SEARCH_OPTIONS]);
+        $showOptions = $member->getMemberPreferenceValue($showOptionsPreference);
+
+        /** @var Preference $searchOptionsPreference */
+        $searchOptionsPreference = $preferenceRepository->findOneBy(['codename' => Preference::SEARCH_OPTIONS]);
+        $memberSearchOptionsPreference = $member->getMemberPreference($searchOptionsPreference);
+        $searchOptions = $memberSearchOptionsPreference->getValue();
+
+        $searchFormRequest = new SearchFormRequest();
+        if ('' !== $searchOptions) {
+            try {
+                $searchFormRequest = unserialize($searchOptions);
+            } catch (TypeError) {
+                // In case the format is corrupted just reset form. Next successful search will write the correct format
+            }
+        }
+        $searchFormRequest->show_map = ('Yes' === $showMap);
+        $searchFormRequest->show_options = ('Yes' === $showOptions);
+
+        // Fetch choices without instantiating entities to prevent "dirty entity" bugs on flush
+        $groupChoices = [];
+        $groupData = $this->entityManager->createQuery(
+            'SELECT g.id, g.name 
+             FROM App\Entity\GroupMembership gm 
+             JOIN gm.group g 
+             WHERE gm.member = :member AND gm.status = :status AND g.approved = :approved'
+        )
+        ->setParameter('member', $member)
+        ->setParameter('status', GroupMembershipStatusType::CURRENT_MEMBER)
+        ->setParameter('approved', Group::APPROVED)
+        ->getArrayResult();
+
+        foreach ($groupData as $row) {
+            $groupChoices[$row['name']] = $row['id'];
+        }
+
+        $languageChoices = [];
+        $languageData = $this->entityManager->createQuery(
+            'SELECT l.shortCode 
+             FROM App\Entity\MemberLanguageLevel mll 
+             JOIN mll.language l 
+             WHERE mll.member = :member'
+        )
+        ->setParameter('member', $member)
+        ->getArrayResult();
+
+        foreach ($languageData as $row) {
+            $code = $row['shortCode'];
+            $languageChoices['lang_' . strtolower($code)] = $code;
+        }
+
+        $search = $formFactory->createNamed('search', SearchFormType::class, $searchFormRequest, [
+            'group_choices' => $groupChoices,
+            'language_choices' => $languageChoices,
+            'search_options' => $searchOptions,
+        ]);
+        // The home page sends its place search ("tiny") and its "my city" link
+        // ("home") under their own names (as a GET query) with only a few fields:
+        // submit them as this search form, keeping the member's saved options
+        // for the fields they do not carry.
+        $homeData = null;
+        if (!$request->query->has('search') && !$request->request->has('search')) {
+            foreach (['tiny', 'home'] as $homeFormName) {
+                foreach ([$request->query, $request->request] as $parameters) {
+                    if (null === $homeData && $parameters->has($homeFormName)) {
+                        $homeData = $parameters->all($homeFormName);
+                    }
+                }
+            }
+        }
+        if (null !== $homeData) {
+            $search->submit($homeData, false);
+        } else {
+            $search->handleRequest($request);
+        }
+
+        $mapMembers = null;
+        if ($search->isSubmitted() && $search->isValid()) {
+            $searchRequest = $search->getData();
+
+            // Calculate bounding box AFTER form processing
+            if (
+                null !== $searchRequest->location_geoname_id
+                && !$searchRequest->location_admin_unit
+                && -1 !== $searchRequest->distance
+            ) {
+                $distance = (int) $searchRequest->distance;
+                if (-1 === $distance) {
+                    $distance = 100;
+                }
+
+                $center = new GeoPoint(
+                    (float) $searchRequest->location_latitude,
+                    (float) $searchRequest->location_longitude
+                );
+                $boundingBox = $center->boundingBox($distance, 'km');
+
+                $searchRequest->min_latitude = $boundingBox->getMinLatitude();
+                $searchRequest->min_longitude = $boundingBox->getMinLongitude();
+                $searchRequest->max_latitude = $boundingBox->getMaxLatitude();
+                $searchRequest->max_longitude = $boundingBox->getMaxLongitude();
+            }
+
+            // Update preferences based on submitted form
+            $memberShowMapPreference = $member->getMemberPreference($showMapPreference);
+            $memberShowMapPreference->setValue($searchRequest->show_map ? 'Yes' : 'No');
+            $memberShowOptionsPreference = $member->getMemberPreference($showOptionsPreference);
+            $memberShowOptionsPreference->setValue($searchRequest->show_options ? 'Yes' : 'No');
+            $this->entityManager->persist($memberShowMapPreference);
+            $this->entityManager->persist($memberShowOptionsPreference);
+            $this->entityManager->flush();
+
+            $searchAdapter = new SearchAdapter($searchFormRequest, $this->entityManager, $member);
+            $pager = new Pagerfanta($searchAdapter);
+            $pager->setMaxPerPage($searchFormRequest->items > 0 ? $searchFormRequest->items : 20);
+            // The page links add ?page= to the search (the page is not a field of the form).
+            $pager->setNormalizeOutOfRangePages(true);
+            $pager->setCurrentPage(max(1, $request->query->getInt('page', 1)));
+
+            // The map shows every member found (not only this page), up to MAP_MEMBERS
+            $mapMembers = $searchAdapter->getMapPoints(self::MAP_MEMBERS);
+        }
+
+        return $this->render('search/searchlocations.html.twig', [
+            'pager' => $pager,
+            'form' => $search->createView(), // Changed to createView() as good practice for Symfony 8
+            'members' => $pager,
+            'map_members' => $mapMembers,
+            'routeName' => 'search_locations',
+            'routeParams' => array_diff_key($request->query->all(), ['page' => true]),
+            'searchParams' => $searchFormRequest, // Pass DTO for display logic
+        ]);
+    }
+
+    /**
+     * A short view of a member, shown over the search results (a drawer on
+     * large screens, a sheet on phones) so the results stay where they are.
+     * With ?embed=1 it is a page of the side panel (from a trip), with a back arrow (?back=);
+     * ?leg= (a stop of that member's trip) shows Invite / Message for it instead of Request stay / Send.
+     */
+    #[Route(path: '/search/members/{username:member}/preview', name: 'search_member_preview', methods: ['GET'])]
+    public function memberPreview(Request $request, Member $member): Response
+    {
+        $this->denyAccessUnlessGranted(MemberVoter::MEMBER_VIEW, $member);
+
+        /** @var CommentRepository $commentRepository */
+        $commentRepository = $this->entityManager->getRepository(Comment::class);
+        /** @var GalleryImageRepository $galleryImageRepository */
+        $galleryImageRepository = $this->entityManager->getRepository(GalleryImage::class);
+
+        $embed = $request->query->getBoolean('embed');
+        $leg = null;
+        if ($embed && $request->query->getInt('leg') > 0) {
+            $leg = $this->entityManager->getRepository(Leg::class)->find($request->query->getInt('leg'));
+            if (null !== $leg && ($leg->isRemoved() || $leg->getTrip()->getCreator() !== $member || \in_array(LegOptionsType::PRIVATE, $leg->getOptions(), true))) {
+                $leg = null;
+            }
+        }
+
+        return $this->render($embed ? 'search/preview_panel.html.twig' : 'search/_preview.html.twig', [
+            'member' => $member,
+            'leg' => $leg,
+            'comments_count' => $commentRepository->getCommentsCountMemberByQuality($member),
+            'pictures' => $galleryImageRepository->getImagesForMember($member),
+        ]);
+    }
+}

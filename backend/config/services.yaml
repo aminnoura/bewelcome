@@ -1,0 +1,499 @@
+# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+
+# This file is the entry point to configure your own services.
+# Files in the packages/ subdirectory configure your dependencies.
+# See also https://symfony.com/doc/current/service_container/import.html
+
+# Put parameters here that don't need to change on each machine where the app is deployed
+# https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
+parameters:
+    router.request_context.host: '%env(web_host)%'
+    router.request_context.scheme: 'https'
+    new_members_messages_per_hour: "%env(int:new_members_messages_per_hour)%"
+    new_members_messages_per_day: "%env(int:new_members_messages_per_day)%"
+    new_members_requests_per_hour: "%env(int:new_members_requests_per_hour)%"
+    new_members_requests_per_day: "%env(int:new_members_requests_per_day)%"
+    data_directory: "%kernel.project_dir%/data"
+    group_directory: "%kernel.project_dir%/%env(group_directory)%"
+    gallery_directory: "%kernel.project_dir%/%env(gallery_directory)%"
+    upload_directory: "%kernel.project_dir%/%env(upload_directory)%"
+    newsletter_image_directory: "%kernel.project_dir%/%env(newsletter_image_directory)%"
+    massmail_batch_size: '%env(int:massmail_batch_size)%'
+    forum_notification_batch_size: '%env(int:forum_notification_batch_size)%'
+    member_batch_size: '%env(int:member_batch_size)%'
+    locales: "%env(csv:LOCALES)%"
+    document_locales: "%env(DOCUMENT_LOCALES)%"
+    username.pattern: "/^[a-z](?!.*[-_.][-_.])[a-z0-9-._]{2,18}[a-z0-9]/i"
+    manticore.host: '%env(MANTICORE_HOST)%'
+    manticore.port: '%env(int:MANTICORE_PORT)%'
+    web_push_vapid_subject: '%env(WEB_PUSH_VAPID_SUBJECT)%'
+    web_push_vapid_public_key: '%env(WEB_PUSH_VAPID_PUBLIC_KEY)%'
+    web_push_vapid_private_key: '%env(WEB_PUSH_VAPID_PRIVATE_KEY)%'
+    # The icons the group admin team can give a group category (Font Awesome 6 Free, solid, without the prefix)
+    group_category_icons:
+        - person-hiking
+        - route
+        - house-user
+        - language
+        - utensils
+        - music
+        - hand-holding-heart
+        - calendar-day
+        - camera
+        - bicycle
+        - futbol
+        - book
+        - users
+        - earth-europe
+        - leaf
+        - paw
+        - laptop
+        - graduation-cap
+        - heart
+        - comments
+
+services:
+    # default configuration for services in *this* file
+    _defaults:
+        autowire: true      # Automatically injects dependencies in your services.
+        autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+        public: false       # Allows optimizing the container by removing unused services; this also means
+        # fetching services directly from the container via $container->get() won't work.
+        # The best practice is to be explicit about your dependencies anyway.
+        bind:
+            $projectDir: '%kernel.project_dir%'
+            $refreshTokenTtl: '%env(APP_REFRESH_TOKEN_TTL)%'
+            $manticoreHost: '%manticore.host%'
+            $manticorePort: '%manticore.port%'
+            $locales: '%locales%'
+            $formLoginAuthenticator: '@security.authenticator.form_login.main'
+            $usernamePattern: '%username.pattern%'
+            $webPushVapidSubject: '%web_push_vapid_subject%'
+            $webPushVapidPublicKey: '%web_push_vapid_public_key%'
+            $webPushVapidPrivateKey: '%web_push_vapid_private_key%'
+            $noReplyEmailAddress: '%env(MAILER_NO_REPLY_ADDRESS)%'
+            $messageEmailAddress: '%env(MAILER_MESSAGE_ADDRESS)%'
+            $groupEmailAddress: '%env(MAILER_GROUP_ADDRESS)%'
+            $passwordEmailAddress: '%env(MAILER_PASSWORD_ADDRESS)%'
+            $signupEmailAddress: '%env(MAILER_SIGNUP_ADDRESS)%'
+            $accountFeedbackAddress: '%env(MAILER_ACCOUNT_FEEDBACK_ADDRESS)%'
+            $reminderEmailAddress: '%env(MAILER_REMINDER_ADDRESS)%'
+            $termsOfUseEmailAddress: '%env(MAILER_TERMS_OF_USE_ADDRESS)%'
+            $newsletterEmailAddress: '%env(MAILER_NEWSLETTER_ADDRESS)%'
+            $suspensionBounceAddress: '%env(MAILER_SUSPENSION_BOUNCE_ADDRESS)%'
+
+    # makes classes in src/ available to be used as services
+    # this creates a service per class whose id is the fully-qualified class name
+    App\:
+        resource: '../src/*'
+        exclude:
+            - '../src/DependencyInjection'
+            - '../src/Entity'
+            - '../src/Migrations'
+            - '../src/Model/MemberDataExtractor/DoctrineExtractor.php'
+            - '../src/Twig'
+            - '../src/Kernel.php'
+
+    # controllers are imported separately to make sure services can be injected
+    # as action arguments even if you don't extend any base controller class
+    App\Controller\:
+        resource: '../src/Controller'
+        tags: [ 'controller.service_arguments' ]
+
+    App\Command\DataRetentionCommand:
+        arguments:
+            $dataDirectory: '%data_directory%'
+
+    App\Command\SendMassmailCommand:
+        arguments:
+            $batchSize: '%massmail_batch_size%'
+
+    App\Command\SendAndPushNotificationsCommand:
+        arguments:
+            $batchSize: '%forum_notification_batch_size%'
+
+    App\Service\PushGatewayInterface: '@App\Service\PushGateway'
+    App\Service\BrowserPushEndpointResolverInterface: '@App\Service\DnsBrowserPushEndpointResolver'
+    App\Service\BrowserPushWebPushFactoryInterface: '@App\Service\BrowserPushWebPushFactory'
+
+    app.member_data_extractor.activities:
+        class: App\Model\MemberDataExtractor\ActivitiesExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.comments:
+        class: App\Model\MemberDataExtractor\CommentsExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.donations:
+        class: App\Model\MemberDataExtractor\DoctrineExtractor
+        factory: [ '@App\Model\MemberDataExtractor\DoctrineExtractorFactory', 'create' ]
+        arguments:
+            $className: 'App\Entity\Donation'
+            $memberRelationName: donor
+            $alias: donations
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.forums_posts:
+        class: App\Model\MemberDataExtractor\ForumPostsExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.gallery_items:
+        class: App\Model\MemberDataExtractor\GalleryItemsExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.group_information:
+        class: App\Model\MemberDataExtractor\GroupInformationExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.messages:
+        class: App\Model\MemberDataExtractor\MessagesExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.member_data:
+        class: App\Model\MemberDataExtractor\MemberDataExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.polls:
+        class: App\Model\MemberDataExtractor\PollsExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.privileges:
+        class: App\Model\MemberDataExtractor\PrivilegesExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.profile_pictures:
+        class: App\Model\MemberDataExtractor\ProfilePicturesExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.requests:
+        class: App\Model\MemberDataExtractor\RequestsExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.invitations:
+        class: App\Model\MemberDataExtractor\InvitationsExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.rights:
+        class: App\Model\MemberDataExtractor\RightsExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.friends:
+        class: App\Model\MemberDataExtractor\FriendsExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.broadcasts:
+        class: App\Model\MemberDataExtractor\DoctrineExtractor
+        factory: [ '@App\Model\MemberDataExtractor\DoctrineExtractorFactory', 'create' ]
+        arguments:
+            $className: 'App\Entity\NewsletterRecipient'
+            $memberRelationName: receiver
+            $alias: broadcasts
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.browser_push_subscriptions:
+        class: App\Model\MemberDataExtractor\DoctrineExtractor
+        factory: [ '@App\Model\MemberDataExtractor\DoctrineExtractorFactory', 'create' ]
+        arguments:
+            $className: 'App\Entity\BrowserPushSubscription'
+            $memberRelationName: member
+            $alias: browser_push_subscriptions
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.browser_push_notifications:
+        class: App\Model\MemberDataExtractor\DoctrineExtractor
+        factory: [ '@App\Model\MemberDataExtractor\DoctrineExtractorFactory', 'create' ]
+        arguments:
+            $className: 'App\Entity\BrowserPushNotification'
+            $memberRelationName: receiver
+            $alias: browser_push_notifications
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.browser_push_notification_deliveries:
+        class: App\Model\MemberDataExtractor\BrowserPushNotificationDeliveriesExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.newsletters:
+        class: App\Model\MemberDataExtractor\NewslettersExtractor
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.community_news:
+        class: App\Model\MemberDataExtractor\DoctrineExtractor
+        factory: [ '@App\Model\MemberDataExtractor\DoctrineExtractorFactory', 'create' ]
+        arguments:
+            $className: 'App\Entity\CommunityNews'
+            $memberRelationName: createdBy
+            $alias: communitynews
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.logs:
+        class: App\Model\MemberDataExtractor\DoctrineExtractor
+        factory: [ '@App\Model\MemberDataExtractor\DoctrineExtractorFactory', 'create' ]
+        arguments:
+            $className: 'App\Entity\Log'
+            $memberRelationName: member
+            $alias: logs
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.subscriptions_threads:
+        class: App\Model\MemberDataExtractor\DoctrineExtractor
+        factory: [ '@App\Model\MemberDataExtractor\DoctrineExtractorFactory', 'create' ]
+        arguments:
+            $className: 'App\Entity\MemberThreadSubscription'
+            $memberRelationName: subscriber
+            $alias: subscriptions
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.translations:
+        class: App\Model\MemberDataExtractor\DoctrineExtractor
+        factory: [ '@App\Model\MemberDataExtractor\DoctrineExtractorFactory', 'create' ]
+        arguments:
+            $className: 'App\Entity\Word'
+            $memberRelationName: author
+            $alias: translations
+        tags: [ 'app.member_data_extractor' ]
+
+    app.member_data_extractor.trips:
+        class: App\Model\MemberDataExtractor\DoctrineExtractor
+        factory: [ '@App\Model\MemberDataExtractor\DoctrineExtractorFactory', 'create' ]
+        arguments:
+            $className: 'App\Entity\Trip'
+            $memberRelationName: creator
+            $alias: trips
+        tags: [ 'app.member_data_extractor' ]
+
+    App\Model\MemberModel:
+        arguments:
+            $extractors: !tagged_iterator app.member_data_extractor
+
+    translation.loader.db:
+        public: true
+        class: App\TranslationLoader\DatabaseLoader
+        tags:
+            - { name: translation.loader, alias: db }
+
+    App\EventListener\LocaleListener:
+        public: true
+        tags:
+            - { name: kernel.event_subscriber }
+
+    App\Controller\Admin\TranslationController:
+        arguments:
+
+    App\Controller\Admin\MockupController:
+        arguments:
+            $providers: !tagged_iterator app.mockup_provider
+
+    App\Model\SuggestLocationModel:
+        arguments:
+            $manticoreHost: '%manticore.host%'
+            $manticorePort: "%manticore.port%"
+
+    app.user_locale_listener:
+        public: true
+        class: App\EventListener\UserLocaleListener
+        tags:
+            - { name: kernel.event_subscriber }
+
+    rox.twig_extension:
+        public: true
+        class: App\Twig\Extension
+        arguments:
+            $publicDirectory: '%kernel.project_dir%/public'
+        tags: [twig.extension]
+
+
+    # src/Twig is excluded from autowiring above, so every extension is listed here.
+    App\Twig\AnalyticsExtension:
+        tags: [twig.extension]
+
+    App\Twig\FlagsExtension:
+        tags: [twig.extension]
+
+    App\Twig\FormerMemberExtension:
+        tags: [twig.extension]
+
+    rox.member_twig_extension:
+        class: App\Twig\MemberTwigExtension
+        public: true
+        arguments: [ '@doctrine.orm.entity_manager', '@security.helper' ]
+        tags: [twig.extension]
+
+    pagerfanta.bootstrap4.ajax.template:
+        public: true
+        class: App\Pagerfanta\TwitterBootstrap4AjaxTemplate
+
+    pagerfanta.bootstrap4.ajax.view:
+        public: true
+        class: Pagerfanta\View\DefaultView
+        arguments:
+            - "@pagerfanta.bootstrap4.ajax.template"
+            - "@translator"
+        tags: [ { name: pagerfanta.view, alias: twitter_bootstrap4_ajax_translated } ]
+
+    rox.logger:
+        class: App\Logger\Logger
+        arguments: [ '@doctrine.orm.entity_manager', '@security.helper' ]
+
+    rox.datacollector_translator:
+        public: true
+        class: Symfony\Component\Translation\DataCollectorTranslator
+        decorates: translator
+        arguments: [ '@rox.datacollector_translator.inner' ]
+
+    rox.user_checker:
+        public: true
+        class: App\Security\UserChecker
+        autowire: true
+
+    rox.default.pagerfanta:
+        class: Pagerfanta\View\OptionableView
+        arguments:
+            - '@pagerfanta.view.twitter_bootstrap4'
+            - { proximity: 2, prev_message: '«', next_message: '»' , css_container_class: 'pagination float-right' }
+        public: false
+        tags: [ { name: pagerfanta.view, alias: rox_default } ]
+
+    rounded_pagination.pagerfanta.view:
+        class: Pagerfanta\Twig\View\TwigView
+        arguments:
+            - '@twig'
+            - 'pagerfanta/rounded_pagination.html.twig'
+        public: false
+        tags: [ { name: pagerfanta.view } ]
+
+    rounded_pagination.pagerfanta:
+        class: Pagerfanta\View\OptionableView
+        arguments:
+            - '@rounded_pagination.pagerfanta.view'
+            - { proximity: 1 }
+        public: false
+        tags: [ { name: pagerfanta.view, alias: rounded_pagination } ]
+
+    rounded_pagination_end.pagerfanta.view:
+        class: Pagerfanta\Twig\View\TwigView
+        arguments:
+            - '@twig'
+            - 'pagerfanta/rounded_pagination_end.html.twig'
+        public: false
+        tags: [ { name: pagerfanta.view } ]
+
+    rounded_pagination_end.pagerfanta:
+        class: Pagerfanta\View\OptionableView
+        arguments:
+            - '@rounded_pagination_end.pagerfanta.view'
+            - { proximity: 1 }
+        public: false
+        tags: [ { name: pagerfanta.view, alias: rounded_pagination_end } ]
+
+    rox.wiki.model:
+        public: true
+        class: App\Model\WikiModel
+        arguments:
+            - "@doctrine.orm.entity_manager"
+
+    \HTMLPurifier:
+        alias: rox.html_purifier
+
+    #  rox.activator:
+    #    class: App\Activator\RoleActivator
+    #    arguments: ["@security.helper"]
+
+    App\Model\TranslationModel:
+        public: true
+        arguments:
+            $cacheDirectory: '%kernel.cache_dir%'
+
+    Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler:
+        arguments:
+            # reuse Doctrine's connection, so sessions use the same runtime credentials
+            - !service { class: PDO, factory: ['@database_connection', 'getNativeConnection'] }
+            # One request of a session at a time (GET_LOCK on the session id, released when the session is saved):
+            # without a lock, two requests of a member that both change the session (a form's CSRF token, a notice)
+            # overwrite each other, and the form is refused or the notice lost (#596). Not LOCK_TRANSACTIONAL: it
+            # opens a transaction on this connection, which is Doctrine's.
+            - { lock_mode: !php/const Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler::LOCK_ADVISORY }
+
+    Symfony\Bridge\Doctrine\Security\RememberMe\DoctrineTokenProvider: ~
+
+    App\Controller\PoliciesController:
+        public: true
+        arguments:
+            $locales: "%document_locales%"
+
+    app.mockup_provider.my_data:
+        class: App\Model\MockupProvider\MyDataMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.landing:
+        class: App\Model\MockupProvider\LandingMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.forums:
+        class: App\Model\MockupProvider\ForumMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.groups:
+        class: App\Model\MockupProvider\GroupMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.message:
+        class: App\Model\MockupProvider\MessageMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.unsubscribe_newsletter:
+        class: App\Model\MockupProvider\NewsletterUnsubscribeMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.newsletters:
+        class: App\Model\MockupProvider\NewslettersMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.errors:
+        class: App\Model\MockupProvider\ErrorMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.requests:
+        class: App\Model\MockupProvider\RequestMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.invitations:
+        class: App\Model\MockupProvider\InvitationMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.signups:
+        class: App\Model\MockupProvider\SignupMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.home_and_login:
+        class: App\Model\MockupProvider\HomeAndLoginMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.policies:
+        class: App\Model\MockupProvider\PoliciesMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.passwords:
+        class: App\Model\MockupProvider\PasswordMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.comments:
+        class: App\Model\MockupProvider\CommentMockups
+        tags: [ 'app.mockup_provider' ]
+
+    app.mockup_provider.profile:
+        class: App\Model\MockupProvider\ProfileMockups
+        tags: [ 'app.mockup_provider' ]
+
+    App\Form\DataTransformer\LocationRequestToLocationTransformer: ~
+    App\Form\DataTransformer\DateTransformer: ~
+
+#    App\Processor\LocationProcessor: ~
+# #   App\Processor\MemberProcessor: ~
+#    App\Processor\LanguageProcessor: ~
+
+when@test:
+    services:
+        App\Tests\Service\StaticBrowserPushEndpointResolver: ~
+        App\Service\BrowserPushEndpointResolverInterface: '@App\Tests\Service\StaticBrowserPushEndpointResolver'
+    # add more service definitions when explicit configuration is needed
+    # please note that last definitions always *replace* previous ones

@@ -1,0 +1,192 @@
+comment.new.experience.please.check:
+    - 'It looks like you had a new experience. If you check below this comment will be shown according to the last update instead of its first creation.'
+    - 'Text shown if the member added loads of new text to the comment or changed the relations (added hosted me or was my guest).'
+comment.new.experience:
+    - 'This adds to my existing experience (update to show higher in comments)'
+    - Checkbox on the edit comment page.
+comment.new.experience.modal:
+    - 'New Experience?'
+    - Title of the modal shown in case a member edits a comment and the code thinks it is a new experience
+comment.new.experience.no:
+    - '@no'
+    - Button label on the modal for new experience
+comment.new.experience.yes:
+    - '@yes'
+    - Button label on the modal for new experience
+label.comment.text:
+    - '@commentscommenter'
+flash.comment.added:
+    - 'Comment for {username} has been added.'
+    - Flash message shown when a member provides a comment about another member. Keep {username} somewhere in the translation.
+comment.add:
+    - 'Add'
+    - Button label on the add comment form
+comment.edit:
+    - 'Edit'
+    - Button label on the edit comment form
+comment.notification.new.subject:
+    - '@Message_profile_comment_subject'
+comment.notification.new.body:
+    - '@CommentNotificationMessageNew'
+comment.notification.update.subject:
+    - '@Message_profile_comment_update_subject'
+comment.notification.update.body:
+    - '@CommentNotificationMessageUpdate'
+comment.editing.not.allowed:
+    - 'Comment is locked and can''t be edited.'
+    - Flash message shown if a comment is negative and comment checkers did not remove the lock on it yet.
+comment.select.quality:
+    - Please select...
+    - Placeholder on the add comment page to tell the user they must select an experience quality
+comment.reminder.guest.subject:
+    - How was your stay with {username}?
+    - Subject of the comment reminder send two days after the requested stay ended.
+comment.first.reminder.guest.body:
+    - "<p>Hello {guest},<br>
+      <br>
+      we hope you had a great time staying with {host}.</p>
+      <p>Please share your experience with others to help them make informed decisions before interacting with {host}. To do so please write a {comment_start}comment{comment_end} which will appear on the profile of {host} and on yours.</p>
+      <p>By showing your appreciation for the hospitality which you received you motivate hosts to continue to host. Comments are also important for the safety of every member of the BeWelcome community.</p>
+      <p>We hope your experience was pleasant and enriching, and that your comment will help other members experience the same. But in case there were serious problems, please do share them, too. You can also share information confidentially with the Safety Team using the “Report profile” link on the profile of {profile_start}{host}{profile_end}.</p>
+      <p>Thanks again for keeping BeWelcome active and safe!<br>
+      <br>
+      The BeWelcome volunteers.</p>"
+    - Text of the first comment reminder send around two days after. Pay special attention to the start and end variables for the links.
+comment.second.reminder.guest.body:
+    - "<p>Hello {guest},<br>
+    <br>
+    You had requested to stay with {host} but have not yet shared your experience with the community in form of a hosting comment. We hope everything went well and you had a good time. If so, but also if it didn’t go so well, it would be good to {comment_start}write a comment{comment_end} about it.</p>
+    <p>Why write a comment?</p>
+    <ul>
+    <li>Many hosts consider a positive comment as a way of thanking them which encourages them to continue to host</li>
+    <li>Comments show that the BeWelcome community is active</li>
+    <li>Comments are an important safety feature in BeWelcome</li>
+    </ul>
+    <p>But if you did not write a comment because of a negative experience please contact the {report_start}Safety Team{report_end}!</p>
+    <p>
+    Thank you for keeping BeWelcome active and safe,<br>
+    <br>
+    The BeWelcome volunteers."
+    - Text of the second comment reminder send around two weeks after.
+comment.reminder.host.subject:
+    - Your experience with {username}
+    - Subject of the comment reminder send to the host if the guest doesn't leave a comment (send three weeks after the end of the requested stay).
+comment.reminder.host.body:
+    - "<p>Hello {host},<br>
+      <br>
+      we hope you had a great time hosting {guest}. Thank you so much for making our community flourish by opening your home to other members. Hosts are the backbone of BeWelcome, and we appreciate every hosting offer.</p>
+      <p>Here is one more thing that you can do: share your experience with others to help them make informed decisions before interacting with {guest}. Please share your experience with others to help them make informed decisions before interacting with {host}. To do so please write a {comment_start}comment{comment_end} which will appear on the profile of {guest} and on yours.</p>
+      <p>We hope your experience was pleasant and enriching, and that your comment will help other members experience the same. But in case there were serious problems, please do share them, too. You can also share information confidentially with the Safety Team using the “Report profile” link on the profile of {profile_start}{host}{profile_end}.</p>
+      <p>The BeWelcome volunteers.</p>"
+    - Text of the comment reminder send to the host if the guest doesn't leave a comment (send three weeks after the end of the requested stay). Pay special attention to the start and end variables for the links.
+flash.comment.report.only.own:
+    - Can't report comments of other members.
+    - Flash message shown if you followed a wrong link to report a comment.
+comments.positive:
+    - '{positive} positive'
+    - Element on the comments pages showing number of positive comments
+comments.neutral:
+    - '{neutral} neutral'
+    - Element on the comments pages showing number of neutral comments
+comments.negative:
+    - '{negative} negative'
+    - Element on the comments pages showing number of negative comments
+comments.total:
+    - '{total} overall'
+    - Element on the comments pages showing number of comments
+comment.quality.positive:
+    - '@-commentquality_good'
+comment.quality.neutral:
+    - '@-commentquality_neutral'
+comment.quality.negative:
+    - '@-commentquality_bad'
+
+comment.form.new:
+    - 'New comment'
+    - Small title above the member name on the form to write a comment
+comment.form.editing:
+    - 'Edit my comment'
+    - Small title above the member name on the form to edit your comment
+comment.form.relations:
+    - 'How do you know {name}?'
+    - Title of the choices of how you know the member, on the comment form
+comment.form.relations.needed:
+    - 'Pick how you know them'
+    - Save button text on the comment form while no relation is picked
+comment.form.quality:
+    - 'How was your experience with {name}?'
+    - Title of the positive, neutral or negative choice on the comment form
+comment.form.quality.needed:
+    - 'Pick how it went'
+    - Save button text on the comment form while no experience is picked
+comment.form.negative.hint:
+    - 'A negative comment is checked by the Safety Team, and you can no longer edit it afterwards.'
+    - Note under the experience choice on the comment form when negative is picked
+comment.form.text:
+    - 'Your comment'
+    - Title of the text field on the comment form
+comment.form.text.placeholder:
+    - 'Tell other members about your time with {name}...'
+    - Placeholder of the text field on the comment form
+comment.form.text.needed:
+    - 'Write your comment'
+    - Save button text on the comment form while the text is empty
+comment.form.guidelines.needed:
+    - 'Confirm the guidelines'
+    - Save button text on the comment form while the guidelines box is not ticked
+confirmationcommentguidelines:
+    - 'I have read the comment guidelines and my comment follows them'
+    - Box to tick on the comment form the first time you write a comment
+profile.comment.relation.was_my_guest:
+    - 'Was my guest'
+    - How you know the member, on the comment form
+profile.comment.relation.hosted_me:
+    - 'Hosted me'
+    - How you know the member, on the comment form
+profile.comment.relation.only_once:
+    - 'We met once'
+    - How you know the member, on the comment form
+profile.comment.relation.family:
+    - 'Family'
+    - How you know the member, on the comment form
+profile.comment.relation.close_friend:
+    - 'Close friend'
+    - How you know the member, on the comment form
+profile.comment.relation.travelled_together:
+    - 'Travelled together'
+    - How you know the member, on the comment form
+profile.comment.relation.friends:
+    - 'Friends'
+    - How you know the member, on the comment form
+profile.comment.relation.chatted:
+    - 'Chatted online'
+    - How you know the member, on the comment form
+comment.relation.shown.was_my_guest:
+    - 'Hosted {username}'
+    - On a comment, next to its date - the author hosted the member the comment is about. Keep {username}.
+comment.relation.shown.hosted_me:
+    - 'Stayed with {username}'
+    - On a comment, next to its date - the author stayed with the member the comment is about. Keep {username}.
+flash.comment.not.active:
+    - 'You can write comments once your account is active: please fill in all required details and confirm your email address.'
+    - Notice when a member whose account isn't active yet opens the comment form (shown on the other member's profile).
+comment.quality.empty:
+  - 'Please choose how your experience was.'
+  - 'Comment form: none of positive, neutral, negative is chosen.'
+  - validators
+comment.relations.empty:
+  - 'Please choose how you know each other.'
+  - 'Comment form: no relation (was my guest, hosted me, ...) is chosen.'
+  - validators
+comment.text.empty:
+  - 'Please write your comment.'
+  - 'Comment form: the comment is empty.'
+  - validators
+comment.guidelines.empty:
+  - 'Please confirm that you followed the comment guidelines.'
+  - 'Comment form: the guidelines box is not ticked.'
+  - validators
+comment.report.empty:
+  - 'Please say what is wrong with the comment.'
+  - 'Report a comment: the form was sent without a text.'
+  - validators

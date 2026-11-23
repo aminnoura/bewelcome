@@ -1,0 +1,174 @@
+App\Entity\Address:
+    address_admin:
+        Member: "@bwadmin"
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: '<randomElement([0, 1])>'
+    address_{1..5}:
+        member: "@member_<current()>"
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: '<randomElement([0, 1])>'
+    address_multiple:
+        member: "@member_1"
+        active: false
+        location: '@NewJayapura'
+        latitude: '@NewJayapura->latitude'
+        longitude: '@NewJayapura->longitude'
+        isWheelChairAccessible: '<randomElement([0, 1])>'
+    address_{6..10}:
+        member: "@member_<current()>"
+        location: '@NewJayapura'
+        latitude: '@NewJayapura->latitude'
+        longitude: '@NewJayapura->longitude'
+        isWheelChairAccessible: '<randomElement([0, 1])>'
+    address_suspended:
+        member: "@member_suspended"
+        location: '@NewJayapura'
+        latitude: '@NewJayapura->latitude'
+        longitude: '@NewJayapura->longitude'
+        isWheelChairAccessible: '<randomElement([0, 1])>'
+    address_banned:
+        member: "@member_banned"
+        location: '@NewJayapura'
+        latitude: '@NewJayapura->latitude'
+        longitude: '@NewJayapura->longitude'
+        isWheelChairAccessible: '<randomElement([0, 1])>'
+    address_retired:
+        member: "@member_retired"
+        location: '@NewJayapura'
+        latitude: '@NewJayapura->latitude'
+        longitude: '@NewJayapura->longitude'
+    address_after_data_retention:
+        member: "@member_retired"
+        location: '@NewJayapura'
+        latitude: '@NewJayapura->latitude'
+        longitude: '@NewJayapura->longitude'
+    address_volunteer_admin:
+        member: '@volunteer_admin'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_words:
+        member: '@volunteer_words'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_group:
+        member: '@volunteer_group'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_rights:
+        member: '@volunteer_rights'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_checker:
+        member: '@volunteer_checker'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_logs:
+        member: '@volunteer_logs'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_comments:
+        member: '@volunteer_comments'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_faqs:
+        member: '@volunteer_faqs'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_flags:
+        member: '@volunteer_flags'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_massmail:
+        member: '@volunteer_massmail'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_treasurer:
+        member: '@volunteer_treasurer'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_forummoderator:
+        member: '@volunteer_forummoderator'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_safetyteam:
+        member: '@volunteer_safetyteam'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_poll:
+        member: '@volunteer_poll'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_wiki:
+        member: '@volunteer_wiki'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_profile:
+        member: '@volunteer_profile'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_communitynews:
+        member: '@volunteer_communitynews'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_newmembersbewelcome:
+        member: '@volunteer_newmembersbewelcome'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_managesubscriptions:
+        member: '@volunteer_managesubscriptions'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_accepter:
+        member: '@volunteer_accepter'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0
+    address_volunteer_sqlforvolunteers:
+        member: '@volunteer_sqlforvolunteers'
+        location: '@NewBerlin'
+        latitude: '@NewBerlin->latitude'
+        longitude: '@NewBerlin->longitude'
+        isWheelChairAccessible: 0

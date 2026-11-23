@@ -1,0 +1,142 @@
+.PHONY: all build check test security phpcpd phploc phpmd phpstan php-cs-fixer php-code-sniffer yaml-lint doctrine twig phpmetrics phpunit int-test infection composer-audit bun-audit behat version hooks
+export COMPOSER_MEMORY_LIMIT := -1
+
+SRC_DIR=src tests
+SRC_DIR_NO_TESTS=src
+
+null  :=
+SPACE := $(null) $(null)
+COMMA := ,
+SRC_DIR_COMMA := $(subst $(SPACE),$(COMMA),$(SRC_DIR))
+TIME_STAMP := $(shell git log -n 1 --format=%aI)
+INFECTION_THREADS ?= $(shell nproc)
+
+all: phpci
+
+# The same checks as CI (.github/workflows/ci.yml calls these targets).
+phpci: check test security phploc
+
+# Fast checks, run by the pre-push hook. The audits catch a new advisory before CI does (they need the network).
+check: php-cs-fixer php-code-sniffer phpstan phpcpd yaml-lint doctrine security
+
+# int-test needs the bewelcome_test database (bin/console test:database:create --env=test).
+test: phpunit infection int-test
+
+security: composer-audit bun-audit
+
+hooks:
+	git config core.hooksPath .githooks
+
+install:
+	git rev-parse --short HEAD > VERSION
+	test -f docker-compose.override.yml || cp docker-compose.override.yml.dist docker-compose.override.yml
+	bzip2 -ckd docker/languages.sql.bz2 > docker/db/languages.sql
+	bzip2 -ckd docker/words.sql.bz2 > docker/db/words.sql
+ifdef root
+		sudo docker compose up -d
+else
+		docker compose up -d
+endif
+
+install-geonames:
+	curl http://download.geonames.org/export/dump/allCountries.zip > docker/db/allCountries.zip
+	curl http://download.geonames.org/export/dump/alternateNames.zip > docker/db/alternateNames.zip
+	curl http://download.geonames.org/export/dump/countryInfo.txt > docker/db/countryInfo.txt
+	unzip docker/db/allCountries.zip -d docker/db/
+	unzip docker/db/alternateNames.zip -d docker/db/
+	rm docker/db/*.zip
+ifdef root
+		sudo docker compose exec php sh -c "mysql bewelcome -u bewelcome -pbewelcome -h db < import.sql"
+else
+		docker compose exec php sh -c "mysql bewelcome -u bewelcome -pbewelcome -h db < import.sql"
+endif
+
+phpcsfix:
+	"./vendor/bin/phpcbf" $(SRC_DIR)
+	"./vendor/bin/php-cs-fixer" fix -v
+
+deploy: composer bun encore assets
+
+composer:
+	composer install --prefer-dist --no-progress --no-suggest --no-interaction --no-scripts
+
+bun:
+	bun i
+
+encore:
+	bun encore production
+
+assets:
+	php bin/console assets:install --env=prod
+
+build:
+	bun encore dev
+	php bin/console assets:install
+
+phpdox: phploc phpmd php-code-sniffer phpunit
+	"./vendor/bin/phpdox"
+
+phpcpd:
+	"./vendor/bin/phpcpd" $(SRC_DIR_NO_TESTS) --exclude=src/Entity --exclude=src/Repository
+
+phploc:
+	"./vendor/bin/phploc" --log-xml=phploc.xml $(SRC_DIR)
+
+phpmd:
+	"./vendor/bin/phpmd" $(SRC_DIR_COMMA) text phpmd.xml
+
+phpstan:
+	"./vendor/bin/phpstan" analyze
+
+php-cs-fixer:
+	"./vendor/bin/php-cs-fixer" fix -v --diff --dry-run
+
+php-code-sniffer:
+	"./vendor/bin/phpcs"  --colors --warning-severity=Error
+
+phpunit:
+	XDEBUG_MODE=coverage "./bin/phpunit" --coverage-text --coverage-xml=reports/phpunit/coverage-xml --coverage-clover=reports/phpunit/clover.xml --log-junit=reports/phpunit/junit.xml --colors=never --order-by=random --exclude-group=integration
+
+int-test:
+	"./bin/phpunit" --log-junit=reports/phpunit/integration.xml --colors=never --order-by=random --group=integration
+
+# Uses the coverage of the last `make phpunit`.
+infection:
+	"./vendor/bin/infection" --skip-initial-tests --coverage=reports/phpunit --min-covered-msi=80 --threads=$(INFECTION_THREADS)
+
+# Fails on security advisories only; abandoned packages are reported but don't fail.
+composer-audit:
+	composer audit --locked --abandoned=ignore --no-interaction
+
+# The audit script of package.json ignores GHSA-gcqx-w48m-w2h4 (low): deepmerge <= 4.3.1, prototype poisoning; no
+# fixed version exists. deepmerge only runs at build time (workbox-webpack-plugin > workbox-build >
+# @rollup/plugin-node-resolve, merging our own config) and is not part of the built assets. Remove the ignore there
+# once a fixed deepmerge or workbox without it is released.
+# It also ignores GHSA-fc5q-39xc-vjpf (high): picomatch <= 4.0.7, ReDoS through repeated extglobs; no fixed version
+# exists. picomatch only runs at build time (sass > @parcel/watcher, workbox-webpack-plugin > workbox-build >
+# @rollup/pluginutils, webpack-dev-server > tinyglobby and http-proxy-middleware > micromatch), matching globs of our
+# own build configuration, and is not part of the built assets. Remove the ignore once a fixed picomatch is released.
+bun-audit:
+	bun run audit
+
+#behat: encore
+#	bin/console doctrine:database:create --env=test --if-not-exists
+#	bin/console doctrine:schema:create --env=test
+#	bin/console hautelook:fixtures:load --env=test --no-interaction
+#	vendor/bin/behat --colors --tags='~@wip'
+
+phpmetrics:
+	"./vendor/bin/phpmetrics" --exclude=src/App/Entity --report-violations=phpmetrics.xml $(SRC_DIR_COMMA)
+
+version:
+	git rev-parse --short HEAD > VERSION
+	touch -d $(TIME_STAMP) VERSION
+
+yaml-lint:
+	bin/console lint:yaml --parse-tags config fixtures
+
+doctrine:
+	bin/console doctrine:schema:validate --skip-sync
+
+twig:
+	bin/console lint:twig

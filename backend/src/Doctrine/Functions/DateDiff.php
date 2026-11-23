@@ -1,0 +1,43 @@
+<?php
+
+namespace App\Doctrine\Functions;
+
+use Doctrine\ORM\Query\AST\Functions\FunctionNode;
+use Doctrine\ORM\Query\AST\Node;
+use Doctrine\ORM\Query\Parser;
+use Doctrine\ORM\Query\SqlWalker;
+use Doctrine\ORM\Query\TokenType;
+
+/**
+ * DateDiffFunction ::= "DATEDIFF" "(" ArithmeticPrimary "," ArithmeticPrimary ")".
+ */
+class DateDiff extends FunctionNode
+{
+    /**
+     * @var Node|null
+     */
+    public $firstDateExpression;
+
+    /**
+     * @var Node|null
+     */
+    public $secondDateExpression;
+
+    public function parse(Parser $parser): void
+    {
+        $parser->match(TokenType::T_IDENTIFIER); // (2)
+        $parser->match(TokenType::T_OPEN_PARENTHESIS); // (3)
+        $this->firstDateExpression = $parser->ArithmeticPrimary(); // (4)
+        $parser->match(TokenType::T_COMMA); // (5)
+        $this->secondDateExpression = $parser->ArithmeticPrimary(); // (6)
+        $parser->match(TokenType::T_CLOSE_PARENTHESIS); // (3)
+    }
+
+    public function getSql(SqlWalker $sqlWalker): string
+    {
+        return 'DATEDIFF(' .
+            $this->firstDateExpression->dispatch($sqlWalker) . ', ' .
+            $this->secondDateExpression->dispatch($sqlWalker) .
+            ')'; // (7)
+    }
+}

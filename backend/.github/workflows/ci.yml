@@ -1,0 +1,369 @@
+name: CI
+
+on:
+  # Run CI every night at 2am
+  schedule:
+    - cron: 0 2 * * *
+  # Run CI on every Pull Request
+  pull_request: ~
+  # Run CI on pushes to develop and main only: a push to a PR branch is covered by
+  # the pull_request run, so it doesn't need a second one.
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+# A new push to a PR cancels the run of the previous one
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PHP_VERSION: 8.5
+
+permissions:
+  contents: read
+
+jobs:
+  phpcpd:
+    name: PHPCPD
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # tag=v7.0.0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # tag=2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: curl, dom, gd, iconv, intl, json, libxml, mbstring, pcntl, pdo_mysql, phar, tokenizer, xml, xmlwriter, xsl, zip
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # tag=v5.0.5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install project dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest --no-interaction --no-scripts
+
+      - name: Run phpcpd tests
+        run: make phpcpd
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_API_VERSION: '1.44'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # tag=v7.0.0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # tag=2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: curl, dom, gd, iconv, intl, json, libxml, mbstring, pcntl, pdo_mysql, phar, tokenizer, xdebug, xml, xmlwriter, xsl, zip
+          coverage: xdebug
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # tag=v5.0.5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install project dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest --no-interaction --no-scripts
+
+      - name: Run phpunit tests
+        run: make phpunit
+
+      - name: Run Infection tests
+        run: make infection
+
+      - name: Install MariaDB
+        uses: getong/mariadb-action@v1.11
+        with:
+          mysql database: 'bewelcome_test'
+          mysql user: 'bewelcome'
+          mysql password: 'bewelcome'
+
+      - name: Create test database
+        run: bin/console test:database:create --env=test
+
+      - name: Warmup cache
+        run: bin/console cache:clear --env=test
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install bun dependencies
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # tag=v4.0.0
+        with:
+          timeout_minutes: 10
+          max_attempts: 5
+          retry_wait_seconds: 15
+          command: bun i --frozen-lockfile
+
+      - name: Run webpack
+        run: bun encore dev
+
+      - name: Run Integration tests
+        run: make int-test
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # tag=v7.0.1
+        if: ${{ always() }}
+        with:
+          name: infection.log
+          path: reports/infection.log
+
+  phploc:
+    name: PHPLoc
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # tag=v7.0.0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # tag=2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: curl, dom, gd, iconv, intl, json, libxml, mbstring, pcntl, pdo_mysql, phar, tokenizer, xml, xmlwriter, xsl, zip
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # tag=v5.0.5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install project dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest --no-interaction --no-scripts
+
+      - name: Run phploc
+        run: make phploc
+
+
+  phpstan:
+    name: PHPStan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # tag=v7.0.0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # tag=2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: curl, dom, gd, iconv, intl, json, libxml, mbstring, pcntl, pdo_mysql, phar, tokenizer, xml, xmlwriter, xsl, zip
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # tag=v5.0.5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install project dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction --no-scripts
+
+      - name: Install MariaDB
+        uses: getong/mariadb-action@v1.11
+        with:
+          mysql database: 'bewelcome'
+          mysql user: 'bewelcome'
+          mysql password: 'bewelcome'
+
+      - name: Create test database
+        run: bin/console test:database:create --env=dev
+        env:
+          DB_HOST: 127.0.0.1
+
+      - name: Warmup cache
+        run: bin/console cache:clear --env=dev
+        env:
+          DB_HOST: 127.0.0.1
+
+      - name: Run phpstan
+        run: make phpstan
+
+  php-cs-fixer:
+    name: PHP-CS-Fixer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # tag=v7.0.0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # tag=2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: curl, dom, gd, iconv, intl, json, libxml, mbstring, pcntl, pdo_mysql, phar, tokenizer, xml, xmlwriter, xsl, zip
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # tag=v5.0.5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install project dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest --no-interaction --no-scripts
+
+      - name: Run php-cs-fixer tests
+        run: make php-cs-fixer
+
+  php-code-sniffer:
+    name: PHP-Code-Sniffer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # tag=v7.0.0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # tag=2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: curl, dom, gd, iconv, intl, json, libxml, mbstring, pcntl, pdo_mysql, phar, tokenizer, xml, xmlwriter, xsl, zip
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # tag=v5.0.5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install project dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest --no-interaction --no-scripts
+
+      - name: Run php-code-sniffer tests
+        run: make php-code-sniffer
+
+  lint-yaml:
+    name: Lint YAML
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # tag=v7.0.0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # tag=2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: curl, dom, gd, iconv, intl, json, libxml, mbstring, pcntl, pdo_mysql, phar, tokenizer, xml, xmlwriter, xsl, zip
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # tag=v5.0.5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install project dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest --no-interaction --no-scripts
+
+      - name: Run Linter
+        run: make yaml-lint
+
+  doctrine-schema-validator:
+    name: Validate Doctrine schema
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # tag=v7.0.0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # tag=2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: curl, dom, gd, iconv, intl, json, libxml, mbstring, pcntl, pdo_mysql, phar, tokenizer, xml, xmlwriter, xsl, zip
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # tag=v5.0.5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install project dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest --no-interaction --no-scripts
+
+      - name: Validate Doctrine schema
+        run: make doctrine
+
+  security:
+    name: Security checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # tag=v7.0.0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # tag=2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: curl, dom, gd, iconv, intl, json, libxml, mbstring, pcntl, pdo_mysql, phar, tokenizer, xml, xmlwriter, xsl, zip
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # tag=v5.0.5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install project dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest --no-interaction --no-scripts
+
+      - name: Install bun dependencies
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # tag=v4.0.0
+        with:
+          timeout_minutes: 10
+          max_attempts: 5
+          retry_wait_seconds: 15
+          command: bun i --frozen-lockfile
+
+      - name: Run PHP security checker
+        run: make composer-audit
+
+      - name: Run JS security checker
+        run: make bun-audit

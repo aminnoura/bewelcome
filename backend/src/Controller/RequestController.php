@@ -1,0 +1,471 @@
+<?php
+
+namespace App\Controller;
+
+use App\Doctrine\AccommodationType;
+use App\Doctrine\SpamInfoType;
+use App\Entity\HostingRequest;
+use App\Entity\Member;
+use App\Entity\Message;
+use App\Form\HostingRequestGuest;
+use App\Form\HostingRequestHost;
+use App\Logger\Logger;
+use App\Model\ConversationModel;
+use App\Model\HostingRequestModel;
+use App\Security\MemberVoter;
+use App\Service\BrowserNotificationPayload;
+use App\Service\BrowserNotificationService;
+use App\Service\InboxFolders;
+use App\Service\Mailer;
+use App\Utilities\ActiveMemberTrait;
+use App\Utilities\AllowContactCheck;
+use App\Utilities\ContactPanelTrait;
+use App\Utilities\ConversationThread;
+use App\Utilities\TranslatorTrait;
+use DateTime;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\Form\Form;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+
+/**
+ * Class HostingRequestController.
+ *
+ * Ignore complexity warning. \todo fix this.
+ *
+ * @SuppressWarnings("PHPMD.CyclomaticComplexity")
+ * @SuppressWarnings("PHPMD.ExcessiveClassComplexity")
+ */
+class RequestController extends BaseRequestAndInvitationController
+{
+    use ActiveMemberTrait;
+    use ContactPanelTrait;
+    use TranslatorTrait;
+
+    private const string LAST_STAY_DATES = 'last_stay_dates';
+
+    public function __construct(
+        ConversationModel $conversationModel,
+        HostingRequestModel $requestModel,
+        EntityManagerInterface $entityManager,
+        private readonly Mailer $mailer,
+        private readonly Logger $logger,
+        private readonly BrowserNotificationService $browserNotificationService,
+        private readonly InboxFolders $inboxFolders,
+    ) {
+        parent::__construct($requestModel, $entityManager);
+
+        $this->conversationModel = $conversationModel;
+    }
+
+    /**
+     * Deals with declines.
+     */
+    public function decline(Message $message): Response
+    {
+        $conversationThread = new ConversationThread($this->entityManager);
+        $conversation = $conversationThread->getThread($message);
+        $current = $conversation[0];
+        $request = $current->getRequest();
+        $request->setStatus(HostingRequest::REQUEST_DECLINED);
+        $this->entityManager->persist($request);
+        $this->entityManager->flush();
+
+        $guest = $message->getInitiator();
+        $host = $message->getReceiver() === $guest ? $message->getSender() : $message->getReceiver();
+
+        $subject = $this->getSubjectForReply($message);
+        $this->sendHostDeclineNotification($host, $guest, $message, $subject);
+
+        $this->addTranslatedFlash('notice', 'flash.request.declined');
+        $this->logger->write('Directly declined', 'Request');
+
+        return $this->redirectToConversation($message);
+    }
+
+    /**
+     * Deals with replies to hosting requests.
+     */
+    public function reply(Request $request, Message $message): Response
+    {
+        // determine if guest or host reply to a request
+        $guest = $message->getInitiator();
+        $host = $message->getReceiver() === $guest ? $message->getSender() : $message->getReceiver();
+
+        $member = $this->getUser();
+        if ($member === $guest) {
+            return $this->guestReply($request, $message, $guest, $host);
+        }
+
+        return $this->hostReply($request, $message, $guest, $host);
+    }
+
+    /**
+     * @SuppressWarnings("PHPMD.NPathComplexity")
+     *
+     * \todo Reduce complexity (seems all new/ conversations have a problem here)
+     */
+    #[Route(path: '/new/request/{username:host}', name: 'hosting_request')]
+    public function newHostingRequest(
+        Request $request,
+        Member $host,
+        AllowContactCheck $allowContactCheck,
+    ): Response {
+        /** @var Member $guest */
+        $guest = $this->getUser();
+        if ($guest === $host) {
+            $this->addTranslatedFlash('notice', 'flash.request.self');
+
+            return $this->notAllowedInPanel($request, $host, 'request', $this->redirectToRoute('members_profile', ['username' => $guest->getUsername()]));
+        }
+
+        $refused = $this->refusedUntilActive($guest, 'flash.conversation.not.active', $this->redirectToRoute('members_profile', ['username' => $host->getUsername()]));
+        if ($refused) {
+            return $this->notAllowedInPanel($request, $host, 'request', $refused);
+        }
+
+        if (!$this->isGranted(MemberVoter::MEMBER_VIEW, $host)) {
+            $this->addTranslatedFlash('note', 'flash.member.invalid');
+
+            return $this->notAllowedInPanel($request, $host, 'request', $this->redirectToRoute('members_profile', ['username' => $guest->getUsername()]));
+        }
+
+        if (
+            $this->conversationModel->hasRequestLimitExceeded(
+                $guest,
+                $this->getParameter('new_members_requests_per_hour'),
+                $this->getParameter('new_members_requests_per_day')
+            )
+        ) {
+            $this->addTranslatedFlash('error', 'flash.request.limit');
+
+            return $this->notAllowedInPanel($request, $host, 'request', $this->redirectBack($request, 'members_profile', ['username' => $host->getUsername()]));
+        }
+
+        if (AccommodationType::NO === $host->getAccommodation()) {
+            $this->addTranslatedFlash('notice', 'request.not.hosting');
+
+            return $this->notAllowedInPanel($request, $host, 'request', $this->redirectToRoute('members_profile', ['username' => $host->getUsername()]));
+        }
+
+        $redirectOnNotAllowed = false;
+        $hasAboutMe = $allowContactCheck->checkIfMemberHasAboutMe($guest);
+        $allowWithoutAboutMe = $allowContactCheck->getAllowRequestsWithoutAboutMe($host);
+        if (!$allowWithoutAboutMe && !$hasAboutMe) {
+            $redirectOnNotAllowed = true;
+            $this->addTranslatedFlash('notice', 'contact.not.without.about_me', [
+                'username' => $host->getUsername(),
+            ]);
+        }
+
+        $hasProfilePicture = $allowContactCheck->checkIfMemberHasProfilePicture($guest);
+        $allowWithoutProfilePicture = $allowContactCheck->getAllowRequestsWithoutProfilePicture($host);
+        if (!$allowWithoutProfilePicture && !$hasProfilePicture) {
+            $redirectOnNotAllowed = true;
+            $this->addTranslatedFlash('notice', 'contact.not.without.profile.picture', [
+                'username' => $host->getUsername(),
+            ]);
+        }
+
+        if ($redirectOnNotAllowed) {
+            return $this->notAllowedInPanel($request, $host, 'request', $this->redirectToRoute('members_profile', ['username' => $guest->getUsername()]));
+        }
+
+        $requestForm = $this->createForm(HostingRequestGuest::class, null);
+        $this->prefillLastStayDates($request, $requestForm);
+        $requestForm->handleRequest($request);
+
+        if ($requestForm->isSubmitted() && $requestForm->isValid()) {
+            // Write request to database after doing some checks
+            $hostingRequest = $this->getMessageFromData($requestForm->getData(), $guest, $host);
+            $hostingRequest = $this->conversationModel->formatConversation($hostingRequest);
+
+            $this->entityManager->persist($hostingRequest);
+            $this->entityManager->flush();
+
+            $this->rememberLastStayDates($request, $hostingRequest);
+
+            $this->sendInitialRequestNotification(
+                $host,
+                $guest,
+                $hostingRequest
+            );
+            // Sent from the search preview (in a frame): a short "sent" page instead of the profile.
+            if ($request->query->getBoolean('embed')) {
+                return $this->render('conversations/embed_sent.html.twig', [
+                    'kind' => 'request',
+                    'member' => $host,
+                    'conversation' => $hostingRequest,
+                ]);
+            }
+
+            $this->addFlash('plausible_event', 'Request Sent');
+
+            return $this->redirectToRoute('members_profile', ['username' => $host->getUsername()]);
+        }
+
+        return $this->render('request/request.html.twig', [
+            'guest' => $guest,
+            'host' => $host,
+            'form' => $requestForm->createView(),
+        ] + $this->inboxFolders->getContext($request, $guest));
+    }
+
+    protected function addExpiredFlash(Member $receiver): void
+    {
+        $this->addTranslatedFlash('notice', 'flash.request.expired', [
+            '%link_start%' => '<a href="' . $this->generateUrl('message_new', [
+                'username' => $receiver->getUsername(),
+            ]) . '" class="text-primary">',
+            '%link_end%' => '</a>',
+        ]);
+    }
+
+    /**
+     * The dates of the last stay request sent today, so that the next request (to another
+     * host, same trip) starts with them. Kept in the session until the end of the day.
+     */
+    private function rememberLastStayDates(Request $request, Message $hostingRequest): void
+    {
+        $stay = $hostingRequest->getRequest();
+        if (null === $stay || null === $stay->getArrival() || null === $stay->getDeparture()) {
+            return;
+        }
+
+        $request->getSession()->set(self::LAST_STAY_DATES, [
+            'day' => date('Y-m-d'),
+            'arrival' => $stay->getArrival()->format('Y-m-d'),
+            'departure' => $stay->getDeparture()->format('Y-m-d'),
+        ]);
+    }
+
+    private function prefillLastStayDates(Request $request, Form $requestForm): void
+    {
+        if (!$request->hasSession()) {
+            return;
+        }
+
+        $dates = $request->getSession()->get(self::LAST_STAY_DATES);
+        $today = date('Y-m-d');
+        if (!\is_array($dates) || ($dates['day'] ?? null) !== $today || ($dates['arrival'] ?? '') < $today) {
+            return;
+        }
+
+        $arrival = DateTime::createFromFormat('!Y-m-d', $dates['arrival']);
+        $departure = DateTime::createFromFormat('!Y-m-d', $dates['departure'] ?? '');
+        if (false === $arrival || false === $departure || $departure <= $arrival) {
+            return;
+        }
+
+        $stay = $requestForm->get('request');
+        $stay->get('arrival')->setData($arrival);
+        $stay->get('departure')->setData($departure);
+    }
+
+    private function guestReply(Request $request, Message $hostingRequest, Member $guest, Member $host): Response
+    {
+        if ($this->model->hasExpired($hostingRequest)) {
+            $this->addExpiredFlash($guest);
+
+            return $this->forward(MessageController::class . '::reply', ['message' => $hostingRequest]);
+        }
+
+        // A declined or cancelled request stays so: the guest can only write (no new dates, no cancelling)
+        if ($this->isClosed($hostingRequest)) {
+            return $this->forward(MessageController::class . '::reply', ['message' => $hostingRequest]);
+        }
+
+        [$thread] = $this->conversationModel->getThreadInformationForMessage($hostingRequest);
+
+        // keep all information from current hosting request except the message text
+        $hostingRequest = $this->getMessageAndRequestClone($hostingRequest);
+
+        // A reply consists of a new message and maybe a change of the status of the hosting request
+        // Additionally the user might change the dates of the request or cancel the request altogether
+        /** @var Form $requestForm */
+        $requestForm = $this->createForm(HostingRequestGuest::class, $hostingRequest);
+        $requestForm->handleRequest($request);
+
+        if ($requestForm->isSubmitted() && $requestForm->isValid()) {
+            $realParent = $this->conversationModel->getLastMessageInConversation($hostingRequest);
+
+            $newRequest = $this->persistFinalRequest($requestForm, $realParent, $guest, $host);
+
+            $subject = $this->getSubjectForReply($newRequest);
+
+            $this->sendGuestReplyNotification(
+                $host,
+                $guest,
+                $newRequest,
+                $subject,
+                $newRequest->getRequest()->getId() !== $realParent->getRequest()->getId()
+            );
+
+            return $this->redirectToConversation($newRequest);
+        }
+
+        return $this->render('request/reply_from_guest.html.twig', [
+            'guest' => $guest,
+            'host' => $host,
+            'form' => $requestForm->createView(),
+            'thread' => $thread,
+        ] + $this->inboxFolders->getContext($request, $this->getUser()));
+    }
+
+    private function hostReply(Request $request, Message $hostingRequest, Member $guest, Member $host): Response
+    {
+        if ($this->model->hasExpired($hostingRequest)) {
+            $this->addExpiredFlash($guest);
+
+            return $this->forward(MessageController::class . '::reply', ['message' => $hostingRequest]);
+        }
+
+        // The guest cancelled: accepting or declining means nothing any more, the host can only write
+        if (HostingRequest::REQUEST_CANCELLED === $hostingRequest->getRequest()->getStatus()) {
+            return $this->forward(MessageController::class . '::reply', ['message' => $hostingRequest]);
+        }
+
+        [$thread] = $this->conversationModel->getThreadInformationForMessage($hostingRequest);
+
+        // keep all information from current hosting request except the message text
+        $hostingRequest = $this->getMessageClone($hostingRequest);
+
+        /** @var Form $requestForm */
+        $requestForm = $this->createForm(HostingRequestHost::class, $hostingRequest);
+        $requestForm->handleRequest($request);
+
+        if ($requestForm->isSubmitted() && $requestForm->isValid()) {
+            $realParent = $this->conversationModel->getLastMessageInConversation($hostingRequest);
+
+            $newRequest = $this->persistFinalRequest($requestForm, $realParent, $host, $guest);
+
+            $subject = $this->getSubjectForReply($newRequest);
+            $requestChanged = $newRequest->getRequest()->getId() !== $realParent->getRequest()->getId();
+            $this->sendHostReplyNotification(
+                $host,
+                $guest,
+                $newRequest,
+                $subject,
+                $requestChanged
+            );
+
+            if (HostingRequest::REQUEST_DECLINED === $newRequest->getRequest()->getStatus()) {
+                $this->logger->write('Regular decline', 'Request');
+            }
+
+            return $this->redirectToConversation($newRequest);
+        }
+
+        return $this->render('request/reply_from_host.html.twig', [
+            'guest' => $guest,
+            'host' => $host,
+            'form' => $requestForm->createView(),
+            'thread' => $thread,
+        ] + $this->inboxFolders->getContext($request, $this->getUser()));
+    }
+
+    private function isClosed(Message $hostingRequest): bool
+    {
+        return \in_array(
+            $hostingRequest->getRequest()->getStatus(),
+            [HostingRequest::REQUEST_DECLINED, HostingRequest::REQUEST_CANCELLED],
+            true,
+        );
+    }
+
+    private function sendGuestReplyNotification(
+        Member $host,
+        Member $guest,
+        Message $request,
+        string $subject,
+        bool $requestChanged,
+    ): void {
+        $this->sendRequestNotification(
+            $guest,
+            $host,
+            $host,
+            $request,
+            $subject,
+            'reply_from_guest',
+            $requestChanged
+        );
+    }
+
+    private function sendInitialRequestNotification(Member $host, Member $guest, Message $request): void
+    {
+        $subject = $request->getSubject()->getSubject();
+
+        if (!str_contains($request->getSpamInfo(), SpamInfoType::SPAM_BLOCKED_WORD)) {
+            $this->sendRequestNotification($guest, $host, $host, $request, $subject, 'request', false);
+        }
+    }
+
+    private function sendHostReplyNotification(
+        Member $host,
+        Member $guest,
+        Message $request,
+        string $subject,
+        bool $requestChanged,
+    ): void {
+        $this->sendRequestNotification(
+            $host,
+            $guest,
+            $host,
+            $request,
+            $subject,
+            'reply_from_host',
+            $requestChanged
+        );
+    }
+
+    private function sendHostDeclineNotification(
+        Member $host,
+        Member $guest,
+        Message $request,
+        string $subject,
+    ): void {
+        $this->sendRequestNotification(
+            $host,
+            $guest,
+            $host,
+            $request,
+            $subject,
+            'decline_from_host',
+            false
+        );
+    }
+
+    /**
+     * The requestChanged parameter triggers a PHPMD warning which is out of place in this case.
+     *
+     * @SuppressWarnings("PHPMD.BooleanArgumentFlag")
+     */
+    private function sendRequestNotification(
+        Member $sender,
+        Member $receiver,
+        Member $host,
+        Message $request,
+        $subject,
+        $template,
+        $requestChanged,
+    ) {
+        // Send mail notification
+        $this->mailer->sendMessageNotificationEmail($sender, $receiver, $template, [
+            'host' => $host,
+            'subject' => $subject,
+            'message' => $request,
+            'request' => $request->getRequest(),
+            'changed' => $requestChanged,
+        ]);
+        $this->browserNotificationService->queueAndSendAfterResponse(
+            $receiver,
+            BrowserNotificationPayload::request(
+                $sender,
+                $this->generateUrl('conversation_view', ['id' => $request->getId()])
+            )
+        );
+
+        return true;
+    }
+}

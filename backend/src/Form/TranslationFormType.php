@@ -1,0 +1,95 @@
+<?php
+
+namespace App\Form;
+
+use App\Doctrine\DomainType;
+use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\SubmitType;
+use Symfony\Component\Form\Extension\Core\Type\TextareaType;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\Form\FormEvent;
+use Symfony\Component\Form\FormEvents;
+use Symfony\Component\Validator\Constraints\NotBlank;
+
+class TranslationFormType extends AbstractType
+{
+    /**
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
+     */
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+            ->add('description', TextareaType::class, [
+                'label' => 'translation.description',
+                'constraints' => [new NotBlank(message: 'translation.description.empty')],
+            ])
+            ->add('englishText', TextareaType::class, [
+                'label' => 'label.admin.translation.englishtext',
+                'constraints' => [new NotBlank(message: 'translation.englishtext.empty')],
+            ])
+            // empty: detected from the English text when it is saved
+            ->add('format', TranslationFormatChoiceType::class, [
+                'help' => 'translation.format.help.create',
+            ])
+        ;
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, static function (FormEvent $event) {
+            $translationRequest = $event->getData();
+            $form = $event->getForm();
+            if ('en' !== $translationRequest->locale) {
+                $form->add('locale', TextType::class, [
+                    'attr' => [
+                        'readonly' => true,
+                    ],
+                    'label' => 'translation.locale',
+                ])
+                    ->add('translatedText', TextareaType::class, [
+                        'required' => false,
+                    ])
+                ;
+            }
+            if (null === $translationRequest->wordCode) {
+                $form->add('wordCode', TextType::class, [
+                    'label' => 'translation.wordcode',
+                    'constraints' => [new NotBlank(message: 'translation.wordcode.empty')],
+                ])
+                ;
+            } else {
+                $form->add('wordCode', TextType::class, [
+                    'attr' => [
+                        'readonly' => true,
+                    ],
+                    'label' => 'translation.wordcode',
+                ])
+                ;
+            }
+            if (null === $translationRequest->domain || 'en' === $translationRequest->locale) {
+                $form
+                    ->add('domain', ChoiceType::class, [
+                        'label' => 'translation.domain',
+                        'choices' => [
+                            DomainType::ICU_MESSAGES => DomainType::ICU_MESSAGES,
+                            DomainType::MESSAGES => DomainType::MESSAGES,
+                            DomainType::VALIDATORS => DomainType::VALIDATORS,
+                        ],
+                        'choice_translation_domain' => false,
+                        'attr' => [
+                            'class' => 'select2',
+                        ],
+                    ])
+                ;
+            } else {
+                $form
+                    ->add('domain', TextType::class, [
+                        'label' => 'translation.domain',
+                        'attr' => [
+                            'readonly' => true,
+                        ],
+                    ])
+                ;
+            }
+            $form->add('create', SubmitType::class);
+        });
+    }
+}

@@ -1,0 +1,170 @@
+<?php
+
+namespace App\Controller;
+
+use App\Entity\Member;
+use App\Form\PasswordFormType;
+use App\Logger\Logger;
+use App\Model\MemberModel;
+use App\Utilities\ChangeProfilePictureGlobals;
+use App\Utilities\ProfileSubmenu;
+use App\Utilities\TranslatedFlashTrait;
+use App\Utilities\TranslatorTrait;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\Form\FormError;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
+use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\WebpackEncoreBundle\Asset\EntrypointLookupInterface;
+
+/**
+ * Class MemberController.
+ */
+class MemberController extends AbstractController
+{
+    use TranslatedFlashTrait;
+    use TranslatorTrait;
+
+    public function __construct(
+        private readonly ProfileSubmenu $profileSubmenu,
+        private readonly ChangeProfilePictureGlobals $globals,
+    ) {
+    }
+
+    #[Route(path: '/mydata', name: 'profile_personal_data_redirect')]
+    public function redirectMyData(): RedirectResponse
+    {
+        /** @var Member $member */
+        $member = $this->getUser();
+        $username = $member->getUsername();
+
+        return $this->redirectToRoute('profile_personal_data', [
+            'username' => $username,
+        ]);
+    }
+
+    #[Route(path: '/members/{username:member}/mydata', name: 'profile_personal_data')]
+    public function getPersonalDataSelf(
+        Request $request,
+        Member $member,
+        MemberModel $memberModel,
+        Security $security,
+        EntrypointLookupInterface $entrypointLookup,
+        PasswordHasherFactoryInterface $passwordHasherFactory,
+    ): Response|RedirectResponse {
+        /** @var Member $loggedInMember */
+        $loggedInMember = $this->getUser();
+
+        if ($member->getUsername() !== $loggedInMember->getUsername()) {
+            return $this->redirectToRoute('members_profile', ['username' => $loggedInMember->getUsername()]);
+        }
+
+        $passwordForm = $this->createForm(PasswordFormType::class);
+        $passwordForm->handleRequest($request);
+
+        if ($passwordForm->isSubmitted() && $passwordForm->isValid()) {
+            $password = $passwordForm->get('password')->getData();
+
+            $token = $security->getToken();
+
+            if ($token) {
+                $passwordHasher = $passwordHasherFactory->getPasswordHasher($member);
+
+                if ($passwordHasher->verify($member->getPassword(), $password)) {
+                    // Collect information and store in zip file
+                    $zipFilename = $memberModel->collectPersonalData($member);
+
+                    $request->getSession()->set('mydata_file', $zipFilename);
+                    $entrypointLookup->reset();
+
+                    return $this->render('private/download.html.twig', [
+                        'username' => $member->getUsername(),
+                        'member' => $member,
+                        'globals_js_json' => $this->globals->getGlobalsJsAsJson($member, $member),
+                        'submenu' => $this->profileSubmenu->getSubmenu($loggedInMember, $member),
+                        'url' => $this->generateUrl(
+                            'member_download_data',
+                            ['username' => $member->getUsername()],
+                            UrlGeneratorInterface::ABSOLUTE_URL
+                        ),
+                    ]);
+                }
+                $passwordForm->addError(new FormError($this->translator->trans('form.error.password.incorrect')));
+            }
+        }
+
+        return $this->render('private/password.html.twig', [
+            'member' => $member,
+            'globals_js_json' => $this->globals->getGlobalsJsAsJson($loggedInMember, $member),
+            'submenu' => $this->profileSubmenu->getSubmenu($loggedInMember, $member),
+            'form' => $passwordForm->createView(),
+        ]);
+    }
+
+    /**
+     * @ParamConverter("member", class="App\Entity\Member", options={"mapping": {"username": "username"}})
+     */
+    #[Route(path: '/members/{username:member}/data', name: 'admin_personal_data')]
+    public function getPersonalData(
+        Request $request,
+        Member $member,
+        Logger $logger,
+        EntrypointLookupInterface $entrypointLookup,
+        MemberModel $memberModel,
+    ): Response {
+        // Only the admin can access this special page
+        $this->denyAccessUnlessGranted(
+            Member::ROLE_ADMIN_ADMIN,
+            null,
+            'Unable to access this page!'
+        );
+
+        /** @var Member $loggedInMember */
+        $loggedInMember = $this->getUser();
+
+        $logger->write('Extracting personal data for ' . $member->getUsername(), 'Members');
+
+        $zipFilename = $memberModel->collectPersonalData($member);
+
+        $request->getSession()->set('mydata_file', $zipFilename);
+
+        $entrypointLookup->reset();
+
+        return $this->render('private/download.html.twig', [
+            'username' => $member->getUsername(),
+            'member' => $member,
+            'globals_js_json' => $this->globals->getGlobalsJsAsJson($loggedInMember, $member),
+            'submenu' => $this->profileSubmenu->getSubmenu($loggedInMember, $member),
+            'url' => $this->generateUrl(
+                'member_download_data',
+                [
+                    'username' => $member->getUsername(),
+                ],
+                UrlGeneratorInterface::ABSOLUTE_URL
+            ),
+        ]);
+    }
+
+    #[Route(path: '/mydata/{username:member}/download', name: 'member_download_data')]
+    public function downloadPersonalData(Request $request, Member $member): BinaryFileResponse|RedirectResponse
+    {
+        $zipFilename = $request->getSession()->get('mydata_file');
+        if (file_exists($zipFilename)) {
+            // main dir is left over!
+            $response = $this->file($zipFilename);
+            $response->headers->set('Content-Type', 'application/zip');
+            $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE);
+            $response->deleteFileAfterSend(true);
+
+            return $response;
+        }
+
+        return new RedirectResponse($this->generateUrl('members_profile', ['username' => $member->getUsername()]));
+    }
+}

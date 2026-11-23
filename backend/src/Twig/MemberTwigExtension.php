@@ -1,0 +1,309 @@
+<?php
+
+namespace App\Twig;
+
+use App\Doctrine\CommentAdminActionType;
+use App\Dto\ReplyRate;
+use App\Entity\Comment;
+use App\Entity\Group;
+use App\Entity\LoginMessage;
+use App\Entity\Member;
+use App\Entity\Message;
+use App\Repository\CommentRepository;
+use App\Repository\LoginMessageRepository;
+use App\Repository\MessageRepository;
+use App\Service\BrowserPushConfig;
+use App\Service\BrowserPushPreferenceService;
+use DateTimeImmutable;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\SecurityBundle\Security;
+use Twig\Extension\AbstractExtension;
+use Twig\Extension\GlobalsInterface;
+use Twig\TwigFunction;
+
+class MemberTwigExtension extends AbstractExtension implements GlobalsInterface
+{
+    private const array ALL_TEAMS = [
+        'communitynews' => [
+            'trans' => 'AdminCommunityNews',
+            'rights' => [Member::ROLE_ADMIN_COMMUNITYNEWS],
+            'route' => 'admin_communitynews_overview',
+        ],
+        'words' => [
+            'trans' => 'AdminWord',
+            'rights' => [Member::ROLE_ADMIN_WORDS],
+            'route' => 'translations',
+        ],
+        'flags' => [
+            'trans' => 'admin.flags.title',
+            'rights' => [Member::ROLE_ADMIN_FLAGS],
+            'route' => 'admin_flags',
+        ],
+        'rights' => [
+            'trans' => 'admin.rights.title',
+            'rights' => [Member::ROLE_ADMIN_RIGHTS],
+            'route' => 'admin_rights_members',
+        ],
+        'logs' => [
+            'trans' => 'AdminLogs',
+            'rights' => [Member::ROLE_ADMIN_LOGS],
+            'route' => 'admin_logs_overview',
+        ],
+        'comments' => [
+            'trans' => 'AdminComments',
+            'rights' => [Member::ROLE_ADMIN_SAFETYTEAM, Member::ROLE_ADMIN_COMMENTS],
+            'route' => 'admin_comment_reported_overview',
+        ],
+        'checker' => [
+            'trans' => 'AdminChecker',
+            'rights' => [Member::ROLE_ADMIN_SAFETYTEAM, Member::ROLE_ADMIN_CHECKER],
+            'route' => 'admin_spam_activities',
+        ],
+        'Membersbewelcome' => [
+            'trans' => 'AdminMembers',
+            'rights' => [Member::ROLE_ADMIN_SAFETYTEAM, Member::ROLE_ADMIN_NEWMEMBERSBEWELCOME],
+            'route' => 'newmembers',
+        ],
+        'massmail' => [
+            'trans' => 'AdminMassMail',
+            'rights' => [Member::ROLE_ADMIN_MASSMAIL],
+            'route' => 'admin_massmail',
+        ],
+        'treasurer' => [
+            'trans' => 'AdminTreasurer',
+            'rights' => [Member::ROLE_ADMIN_TREASURER],
+            'route' => 'admin_treasurer_overview',
+        ],
+        'faq' => [
+            'trans' => 'AdminFAQ',
+            'rights' => [Member::ROLE_ADMIN_FAQ],
+            'route' => 'admin_faqs_overview',
+        ],
+        'group' => [
+            'trans' => 'AdminGroup',
+            'rights' => [Member::ROLE_ADMIN_GROUP],
+            'route' => 'admin_groups_approval',
+            'minimum_level' => 10,
+        ],
+        'tools' => [
+            'trans' => 'AdminVolunteerTools',
+            'rights' => [
+                Member::ROLE_ADMIN_SAFETYTEAM, Member::ROLE_ADMIN_ADMIN,
+                Member::ROLE_ADMIN_SQLFORVOLUNTEERS, Member::ROLE_ADMIN_PROFILE,
+                Member::ROLE_ADMIN_CHECKER, Member::ROLE_ADMIN_ACCEPTER,
+                Member::ROLE_ADMIN_MANAGESUBSCRIPTIONS,
+            ],
+            'route' => 'admin_volunteer_tools',
+        ],
+        'polls' => [
+            'trans' => 'AdminPolls',
+            'rights' => [Member::ROLE_ADMIN_POLL],
+            'route' => 'polls',
+        ],
+    ];
+
+    protected ?Member $member;
+
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        private readonly Security $security,
+        private readonly BrowserPushConfig $browserPushConfig,
+        private readonly BrowserPushPreferenceService $browserPushPreferenceService,
+    ) {
+        /** @var Member $member */
+        $member = $this->security->getUser();
+
+        $this->member = $member;
+    }
+
+    public function getGlobals(): array
+    {
+        if (null === $this->member) {
+            return [];
+        }
+
+        $teams = $this->getTeams();
+        $browserPushEnabled = $this->browserPushConfig->isConfigured();
+
+        return [
+            'loginmessages' => $this->getLoginMessages(),
+            'groupsInApprovalQueue' => $this->getGroupsInApprovalQueueCount(),
+            'reportedCommentsCount' => $this->getReportedCommentsCount(),
+            'safetyTeamCommentsCount' => $this->getSafetyTeamCommentsCount(),
+            'reportedMessagesCount' => $this->getReportedMessagesCount(),
+            'conversationCount' => $this->getUnreadConversationsCount(),
+            'teams' => $teams,
+            'browser_push_enabled' => $browserPushEnabled,
+            'browser_push_public_key' => $browserPushEnabled ? $this->browserPushConfig->getPublicKey() : '',
+            'browser_push_preference' => $browserPushEnabled
+                ? $this->browserPushPreferenceService->getValue($this->member)
+                : BrowserPushPreferenceService::VALUE_NO,
+        ];
+    }
+
+    public function getFunctions(): array
+    {
+        return [
+            new TwigFunction('member_comments_count', $this->getMemberCommentsCount(...)),
+            new TwigFunction('member_comments_by_quality', $this->getMemberCommentsByQuality(...)),
+            new TwigFunction('member_reply_rate', $this->getMemberReplyRate(...)),
+        ];
+    }
+
+    /**
+     * Number of visible comments a member received, shown next to the name in the profile header.
+     */
+    public function getMemberCommentsCount(Member $member): int
+    {
+        /** @var CommentRepository $commentRepository */
+        $commentRepository = $this->entityManager->getRepository(Comment::class);
+
+        return $commentRepository->getVisibleCommentsForMemberCount($member);
+    }
+
+    /**
+     * Hosting requests and invitations the member received and answered, for the reply rate on the profile.
+     * $since (a date string such as '-12 months') counts only the requests sent since then.
+     */
+    public function getMemberReplyRate(Member $member, ?string $since = null): ReplyRate
+    {
+        /** @var MessageRepository $messageRepository */
+        $messageRepository = $this->entityManager->getRepository(Message::class);
+
+        return $messageRepository->getReplyRate($member, null === $since ? null : new DateTimeImmutable($since));
+    }
+
+    /**
+     * Comments the member received, counted by quality (positive, neutral, negative, total).
+     */
+    public function getMemberCommentsByQuality(Member $member): array
+    {
+        /** @var CommentRepository $commentRepository */
+        $commentRepository = $this->entityManager->getRepository(Comment::class);
+
+        return $commentRepository->getCommentsCountMemberByQuality($member);
+    }
+
+    public function getName()
+    {
+        return self::class;
+    }
+
+    /**
+     * @return array
+     */
+    protected function getTeams()
+    {
+        $roles = $this->security->getUser()->getRoles();
+
+        $teams = [];
+        $assignedTeams = [];
+        foreach (self::ALL_TEAMS as $name => $team) {
+            foreach ($roles as $role) {
+                if (!\in_array($name, $assignedTeams, true)) {
+                    if (\in_array($role, $team['rights'], true)) {
+                        $add = true;
+                        if (isset($team['minimum_level'])) {
+                            $level = $this->member->getLevelForRight($role);
+                            if ($level !== $team['minimum_level']) {
+                                $add = false;
+                            }
+                        }
+                        if ($add) {
+                            $assignedTeams[] = $name;
+                            $teams[] = [
+                                'trans' => strtolower($team['trans']),
+                                'route' => $team['route'],
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return $teams;
+    }
+
+    protected function getGroupsInApprovalQueueCount(): ?int
+    {
+        $groupsInApprovalCount = null;
+        if ($this->security->isGranted(Member::ROLE_ADMIN_GROUP)) {
+            $level = $this->member->getLevelForRight(Member::ROLE_ADMIN_GROUP);
+            if (10 === $level) {
+                $groupsRepository = $this->entityManager->getRepository(Group::class);
+                $groups = $groupsRepository->findBy([
+                    'approved' => Group::OPEN,
+                ]);
+                $groupsInApprovalCount = \count($groups);
+            }
+        }
+
+        return $groupsInApprovalCount;
+    }
+
+    /**
+     * The comments to check for the admin bar, for the Comments right. The Safety Team gets their own list's count
+     * instead (getSafetyTeamCommentsCount()), also when they have the Comments right.
+     */
+    protected function getReportedCommentsCount(): ?int
+    {
+        $reportedCommentsCount = null;
+        if (
+            $this->security->isGranted(Member::ROLE_ADMIN_COMMENTS)
+            && !$this->security->isGranted(Member::ROLE_ADMIN_SAFETYTEAM)
+        ) {
+            /** @var CommentRepository $commentRepository */
+            $commentRepository = $this->entityManager->getRepository(Comment::class);
+            $reportedCommentsCount = $commentRepository->getReportedCommentsCount();
+        }
+
+        return $reportedCommentsCount;
+    }
+
+    /**
+     * The comments handed to the Safety Team, for the admin bar of its members.
+     */
+    protected function getSafetyTeamCommentsCount(): ?int
+    {
+        if (!$this->security->isGranted(Member::ROLE_ADMIN_SAFETYTEAM)) {
+            return null;
+        }
+
+        /** @var CommentRepository $commentRepository */
+        $commentRepository = $this->entityManager->getRepository(Comment::class);
+
+        return $commentRepository->countByAdminAction(CommentAdminActionType::SAFETY_TEAM_CHECK);
+    }
+
+    protected function getReportedMessagesCount(): ?int
+    {
+        $reportedMessagesCount = null;
+        if (
+            $this->security->isGranted(Member::ROLE_ADMIN_CHECKER)
+            || $this->security->isGranted(Member::ROLE_ADMIN_SAFETYTEAM)
+        ) {
+            /** @var MessageRepository $messageRepository */
+            $messageRepository = $this->entityManager->getRepository(Message::class);
+
+            $reportedMessagesCount = $messageRepository->getReportedMessagesCount();
+        }
+
+        return $reportedMessagesCount;
+    }
+
+    protected function getUnreadConversationsCount(): int
+    {
+        /** @var MessageRepository $messageRepository */
+        $messageRepository = $this->entityManager->getRepository(Message::class);
+
+        return $messageRepository->getUnreadConversationsCount($this->member);
+    }
+
+    protected function getLoginMessages(): array
+    {
+        /** @var LoginMessageRepository $loginMessageRepository */
+        $loginMessageRepository = $this->entityManager->getRepository(LoginMessage::class);
+
+        return $loginMessageRepository->getLoginMessages($this->member);
+    }
+}

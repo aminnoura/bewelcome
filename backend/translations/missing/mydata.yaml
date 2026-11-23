@@ -1,0 +1,270 @@
+mydata.activities.no.activity:
+    - 'No activities found.'
+    - Information when a user has not attended nor created any activities.
+mydata.activity.maybe.attend:
+    - 'You said ›I might attend this activity‹.'
+    - Information about the attendance for an activity.
+mydata.comments.no.comment:
+    - 'No comments found.'
+    - Information when a user has not left any comments.
+mydata.communitynews.no.comments:
+    - 'No comments found.'
+    - Information when a user has not left any comments for a communitynews.
+mydata.communitynews.no.communitynews:
+    - 'You did not create any community news.'
+    - Information when a user has not created any communitynews.
+mydata.gallery.no.images:
+    - 'Your gallery is empty.'
+    - Information when a user has not uploaded any image to the gallery.
+mydata.logs.no.logs:
+    - 'Oddly there are no logs about your ways on BeWelcome.'
+    - Should never be shown to anyone.
+mydata.pictures.no.images:
+    - 'You never uploaded any profile pictures.'
+    - Shown to the user if their profile still shows a beaver :)
+mydata.polls.contributed.no.polls:
+    - 'You never took part in any poll.'
+    - Shown to the user, who never contributed in a poll (most of the members).
+mydata.polls.created.no.polls:
+    - 'You never created a poll.'
+    - Shown to the user, who never created a poll (nearly all of the members).
+mydata.polls.voted.no.polls:
+    - 'You never took part in any poll.'
+    - Shown to the user, who never voted in a poll (most of the members). (Same as mydata.polls.contributed.no.polls)
+mydata.posts.no.posts:
+    - 'You never posted into a group or the forum.'
+    - Text in the posts section of the extracted data if no posts have been found.
+mydata.privileges.no.privileges:
+    - 'You do not have any additional privileges (regular user, not volunteering).'
+    - Shown if the user does not have additional privileges (like group owner).
+mydata.relations.no.comments:
+    - 'You have no special relations.'
+    - Text in the special relations section (family and friends) of the extracted data if no relations have been found.
+mydata.requests.no.requests:
+    - 'You have not gotten or written any request.'
+    - Text in the requests section of the extracted data if no requests have been found.
+mydata.rights.no.rights:
+    - 'You do not have any additional rights (regular user, not volunteering).'
+    - Shown if the user does not have additional rights (like translation rights).
+mydata.subscriptions.thread.name:
+    - Thread Name
+    - Table header for the listed threads with their subscriptions
+mydata.subscriptions.subscription:
+    - Subscriptions
+    - Table header for the listed threads with their subscriptions
+mydata.subscriptions.threads.headline:
+    - Thread Subscriptions
+    - Headline for the list of subscribed threads
+mydata.subscriptions.threads.abstract:
+    - 'This lists all thread subscriptions you have active.'
+    - Abstract for the subscription section (see /forums/subscriptions).
+mydata.subscriptions.threads.no.subscriptions:
+    - 'You did not subscribe to any posts or threads in the forum or to any group.'
+    - Text in the subscriptions section of the extracted data if no subscriptionss have been found.
+mydata.subscriptions.no.subscriptions:
+    - 'You did not subscribe to any posts or threads in the forum or to any group.'
+    - Text in the subscriptions section of the extracted data if no subscriptionss have been found.
+mydata.trips.headline:
+    - 'Trips'
+    - Headline for the extracted data about trips created by the user.
+mydata.trips.abstract:
+    - 'This lists all trips you created.'
+    - Short paragraph giving an explaining for the trips section of the extracted data.
+mydata.trips.no.trips:
+    - 'You have not created any trip.'
+    - Text in the trips section of the extracted data.
+mydata.polls.choices:
+    - 'Options for this poll'
+    - Text shown in the extracted data for the options offered for a poll
+mydata.polls.groups:
+    - 'Groups involved'
+    - This is shown if the poll is limited to a group
+mydata.browser.push.subscriptions.headline:
+    - Browser notification subscriptions
+    - Headline for browser push subscriptions in the personal data export.
+mydata.browser.push.subscriptions.abstract:
+    - This lists the technical browser notification subscription data connected to your account. Treat exported authentication tokens as sensitive.
+    - Short paragraph explaining browser push metadata in the personal data export.
+mydata.browser.push.subscriptions.no.subscriptions:
+    - You do not have any browser notification subscriptions.
+    - Text in the browser push subscriptions section when no subscriptions were found.
+mydata.browser.push.subscriptions.endpoint.hash:
+    - Endpoint hash
+    - Table header for the hashed browser push endpoint.
+mydata.browser.push.subscriptions.endpoint.host:
+    - Endpoint host
+    - Table header for the browser push endpoint host.
+mydata.browser.push.subscriptions.endpoint:
+    - Endpoint
+    - Table header for the full browser push endpoint.
+mydata.browser.push.subscriptions.public.key:
+    - Public key
+    - Table header for the browser push subscription public key.
+mydata.browser.push.subscriptions.auth.token:
+    - Authentication token
+    - Table header for the browser push subscription authentication token.
+mydata.browser.push.subscriptions.user.agent:
+    - Browser
+    - Table header for the browser user agent stored with a push subscription.
+mydata.browser.push.subscriptions.content.encoding:
+    - Content encoding
+    - Table header for the push subscription content encoding.
+mydata.browser.push.subscriptions.created:
+    - Created
+    - Table header for when a browser push subscription was created.
+mydata.browser.push.subscriptions.last.seen:
+    - Last seen
+    - Table header for when a browser push subscription was last refreshed.
+mydata.browser.push.subscriptions.last.error:
+    - Last error
+    - Table header for the last push delivery error for a browser subscription.
+mydata.browser.push.notifications.headline:
+    - Queued browser notifications
+    - Headline for queued browser push notifications in the personal data export.
+mydata.browser.push.notifications.abstract:
+    - This lists queued browser notification metadata connected to your account.
+    - Short paragraph explaining queued browser push notification metadata in the personal data export.
+mydata.browser.push.notifications.no.notifications:
+    - You do not have any queued browser notifications.
+    - Text in the browser push notifications section when no queued notifications were found.
+mydata.browser.push.notifications.type:
+    - Type
+    - Table header for the browser push notification type.
+mydata.browser.push.notifications.sender:
+    - Sender
+    - Table header for the browser push notification sender username.
+mydata.browser.push.notifications.url:
+    - URL
+    - Table header for the browser push notification target URL.
+mydata.browser.push.notifications.status:
+    - Status
+    - Table header for the browser push notification queue status.
+mydata.browser.push.notifications.created:
+    - Created
+    - Table header for when a browser push notification queue row was created.
+mydata.browser.push.notifications.updated:
+    - Updated
+    - Table header for when a browser push notification queue row was updated.
+mydata.browser.push.notifications.last.error:
+    - Last error
+    - Table header for the last browser push notification queue error.
+mydata.browser.push.deliveries.headline:
+    - Browser notification deliveries
+    - Headline for browser push delivery metadata in the personal data export.
+mydata.browser.push.deliveries.abstract:
+    - This lists delivery attempts for browser notifications connected to your account.
+    - Short paragraph explaining browser push delivery metadata.
+mydata.browser.push.deliveries.no.deliveries:
+    - You do not have any browser notification delivery records.
+    - Text shown when no browser push delivery records were found.
+mydata.browser.push.deliveries.notification:
+    - Notification ID
+mydata.browser.push.deliveries.subscription:
+    - Subscription endpoint hash
+mydata.browser.push.deliveries.status:
+    - Status
+mydata.browser.push.deliveries.attempts:
+    - Attempts
+mydata.browser.push.deliveries.created:
+    - Created
+mydata.browser.push.deliveries.updated:
+    - Updated
+mydata.browser.push.deliveries.last.error:
+    - Last error
+mydata.newsletter.no.title:
+    - '(no title)'
+    - Shown in the data export for a newsletter without a title in any language.
+mydata.newsletter.no.body:
+    - '(no text)'
+    - Shown in the data export for a newsletter without a text in any language.
+mydata.polls.comment:
+    - 'Your comment'
+    - Data export, polls you contributed to, above the comment you left on the poll.
+mydata.friends.headline:
+    - 'Friends'
+    - Headline of the friendships page in the personal data export
+mydata.friends.abstract:
+    - 'Your friendships on BeWelcome, confirmed or waiting for confirmation.'
+    - Text of the friendships page in the personal data export
+mydata.friends.none:
+    - 'You don''t have any friendships.'
+    - Shown in the personal data export when there are no friendships
+mydata.friends.member:
+    - 'Friend'
+    - Column heading in the personal data export
+mydata.friends.requester:
+    - 'Asked by'
+    - Column heading in the personal data export
+mydata.friends.created:
+    - 'Asked on'
+    - Column heading in the personal data export
+mydata.friends.confirmed:
+    - 'Confirmed on'
+    - Column heading in the personal data export
+mydata.friends.pending:
+    - 'Not yet'
+    - Shown in the personal data export for a friendship that isn''t confirmed
+mydata.export:
+    - 'Personal data export'
+    - 'Data export: the label in the top bar of every page and above the overview''s title.'
+mydata.sections:
+    - 'Sections'
+    - 'Data export: label of the sidebar with all sections (for screen readers).'
+mydata.group.you:
+    - 'You'
+    - 'Data export: the sidebar''s group of profile, gallery, trips, friends and references.'
+mydata.group.conversations:
+    - 'Conversations'
+    - 'Data export: the sidebar''s group of messages, requests and invitations.'
+mydata.group.community:
+    - 'Community'
+    - 'Data export: the sidebar''s group of groups, posts, activities, polls and news.'
+mydata.group.account:
+    - 'Account'
+    - 'Data export: the sidebar''s group of donations, rights, translations, logs and notifications.'
+mydata.back:
+    - 'Back to the overview'
+    - 'Data export: the link under an empty section.'
+mydata.open.site:
+    - 'Open on BeWelcome'
+    - 'Data export: a link to the page on the site (needs a connection and the login).'
+mydata.stats.sent.received:
+    - '{sent} sent · {received} received'
+    - 'Data export overview: how many messages, requests or invitations were sent and received. Keep {sent} and {received}.'
+mydata.stats.sent:
+    - 'Sent'
+    - 'Data export: the number of messages, requests or invitations sent.'
+mydata.stats.received:
+    - 'Received'
+    - 'Data export: the number of messages, requests or invitations received.'
+mydata.conversation.readonly:
+    - 'A copy of the conversation. To answer, open it on BeWelcome.'
+    - 'Data export: under a conversation.'
+mydata.stay.nights:
+    - 'Nights'
+    - 'Data export: the number of nights of a request or invitation.'
+mydata.picture.open:
+    - 'Show the picture'
+    - 'Data export, profile: the link on the profile picture (for screen readers).'
+mydata.picture.close:
+    - 'Close'
+    - 'Data export, profile: closes the full-size picture.'
+mydata.picture.open.file:
+    - 'Open file'
+    - 'Data export, profile: opens the picture file itself.'
+mydata.profile.status:
+    - 'Status'
+    - 'Data export, profile: the label of the member''s status (active, …).'
+mydata.permalink:
+    - 'Permalink'
+    - 'Data export, posts: the link to the post on the site.'
+mydata.groups.goto:
+    - 'Go to group'
+    - 'Data export, groups: the link to the group on the site.'
+mydata.polls.no.title:
+    - 'Poll without a title'
+    - 'Data export, polls: a poll that has no title.'
+mydata.password.empty:
+  - 'Please enter your password.'
+  - 'Personal data: the form that asks for the password before the download was sent without one.'
+  - validators

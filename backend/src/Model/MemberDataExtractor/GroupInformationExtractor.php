@@ -1,0 +1,32 @@
+<?php
+
+namespace App\Model\MemberDataExtractor;
+
+use App\Entity\Member;
+use Exception;
+
+final class GroupInformationExtractor extends AbstractExtractor implements ExtractorInterface
+{
+    public function extract(Member $member, string $tempDir): array
+    {
+        // Groups the member is in and why
+        $memberships = [];
+        $groupMemberships = $member->getGroupMemberships();
+        if (0 !== $groupMemberships->count()) {
+            foreach ($groupMemberships as $groupMembership) {
+                try {
+                    // Database is messy. Check if group still exists
+                    if ($groupMembership->getGroup()->getName()) {
+                        $memberships[] = $groupMembership;
+                    }
+                } catch (Exception) {
+                    // Deleted Group
+                }
+            }
+        }
+
+        $this->writePersonalDataFile(['groupmemberships' => $memberships], 'groups', $tempDir . 'groups.html');
+
+        return ['groups' => \count($memberships)];
+    }
+}

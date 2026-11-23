@@ -1,0 +1,5 @@
+{% extends 'emails/comment.reminder.template.html.twig' %}
+{# The first reminder to the guest to write about the stay with the host. #}
+{% set title_key = 'comment.reminder.guest.subject' %}
+{% set body_key = 'comment.first.reminder.guest.body' %}
+{% set about = host %}

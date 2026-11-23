@@ -1,0 +1,333 @@
+<?php
+
+namespace App\Model;
+
+use App\Doctrine\MemberStatusType;
+use App\Dto\ActivityDto;
+use App\Entity\Activity;
+use App\Entity\ActivityAttendee;
+use App\Entity\Member;
+use App\Entity\MemberActivityNotificationSent;
+use App\Entity\Preference;
+use App\Form\ActivityRadiusType;
+use App\Repository\ActivityRepository;
+use App\Service\Mailer;
+use DateTimeInterface;
+use Doctrine\ORM\EntityManagerInterface;
+use HTMLPurifier;
+use InvalidArgumentException;
+use Pagerfanta\Pagerfanta;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\Lock\LockFactory;
+
+class ActivityModel
+{
+    private const array SCHEDULED_NOTIFICATIONS = [
+        Preference::ACTIVITY_NOTIFICATIONS_DAILY,
+        Preference::ACTIVITY_NOTIFICATIONS_WEEKLY,
+        Preference::ACTIVITY_NOTIFICATIONS_MONTHLY,
+    ];
+
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        #[Autowire(service: 'exercise_html_purifier.default')]
+        private readonly HTMLPurifier $purifier,
+        #[Autowire(service: 'exercise_html_purifier.text')]
+        private readonly HTMLPurifier $textPurifier,
+        private readonly Mailer $mailer,
+        private readonly LockFactory $lockFactory,
+    ) {
+    }
+
+    /**
+     * Mails the members near the activity who want to hear about new activities right away.
+     *
+     * @return int the mails sent
+     */
+    public function notifyMembersAboutActivity(Activity $activity): int
+    {
+        return $this->sendActivityNotifications($activity, [Preference::ACTIVITY_NOTIFICATIONS_IMMEDIATELY]);
+    }
+
+    /**
+     * Mails the members who want to hear daily, weekly or monthly ($frequency) about the activities created in the
+     * period: one mail a member with all of them (only "immediately" sends a mail per activity).
+     *
+     * @return int the mails sent
+     */
+    public function sendScheduledActivityNotifications(string $frequency, DateTimeInterface $createdSince, DateTimeInterface $createdUntil): int
+    {
+        if (!\in_array($frequency, self::SCHEDULED_NOTIFICATIONS, true)) {
+            throw new InvalidArgumentException('Unsupported activity notification frequency.');
+        }
+
+        /** @var ActivityRepository $repository */
+        $repository = $this->entityManager->getRepository(Activity::class);
+        $sentRepository = $this->entityManager->getRepository(MemberActivityNotificationSent::class);
+
+        // the activities of the period per member who wasn't told about them yet
+        $members = [];
+        $activities = [];
+        foreach ($repository->findActivitiesCreatedBetween($createdSince, $createdUntil) as $activity) {
+            foreach ($repository->getMembersToNotifyAboutActivity($activity, [$frequency]) as $member) {
+                if (null !== $sentRepository->findOneBy(['member' => $member, 'activity' => $activity])) {
+                    continue;
+                }
+                $members[$member->getId()] = $member;
+                $activities[$member->getId()][] = $activity;
+            }
+        }
+
+        // one mail a member: the digest of the period
+        $sent = 0;
+        foreach ($members as $memberId => $member) {
+            $lock = $this->lockFactory->createLock(\sprintf('member-activity-digest:%d', $memberId));
+            if (!$lock->acquire()) {
+                continue;
+            }
+
+            try {
+                if (!$this->mailer->sendActivityDigestEmail($member, $activities[$memberId], $frequency)) {
+                    continue;
+                }
+
+                foreach ($activities[$memberId] as $activity) {
+                    $this->entityManager->persist(new MemberActivityNotificationSent($member, $activity));
+                }
+                $this->entityManager->flush();
+                ++$sent;
+            } finally {
+                $lock->release();
+            }
+        }
+
+        return $sent;
+    }
+
+    public function getLatest($page, $limit): Pagerfanta
+    {
+        /** @var ActivityRepository $repository */
+        $repository = $this->entityManager->getRepository(Activity::class);
+
+        return $repository->findLatest($page, $limit);
+    }
+
+    public function getProblematicActivities($page, $limit): Pagerfanta
+    {
+        /** @var ActivityRepository $repository */
+        $repository = $this->entityManager->getRepository(Activity::class);
+
+        return $repository->findProblematicActivities($page, $limit);
+    }
+
+    public function deleteAsSpamByChecker($activityIds): void
+    {
+        // delete all activities based on there ids
+        /** @var ActivityRepository $activityRepository */
+        $activityRepository = $this->entityManager->getRepository(Activity::class);
+        $activities = $activityRepository->findBy(['id' => $activityIds]);
+        foreach ($activities as $activity) {
+            // the attendees first: the database keeps an activity that still has them
+            foreach ($activity->getAttendees() as $attendee) {
+                $this->entityManager->remove($attendee);
+            }
+            $this->entityManager->remove($activity);
+        }
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Creates the activity with its creator as the first organizer, who attends.
+     */
+    public function create(ActivityDto $data, Member $creator): Activity
+    {
+        $activity = new Activity();
+        $activity->setCreatedBy($creator);
+        $activity->setStatus(Activity::STATUS_ACTIVE);
+        $this->purify($data)->toEntity($activity);
+
+        $organizer = new ActivityAttendee($activity, $creator, ActivityAttendee::ATTENDS_YES, '', true);
+        $activity->addAttendee($organizer);
+
+        $this->entityManager->persist($activity);
+        $this->entityManager->persist($organizer);
+        $this->entityManager->flush();
+
+        return $activity;
+    }
+
+    public function update(Activity $activity, ActivityDto $data): void
+    {
+        $this->purify($data)->toEntity($activity);
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Saves the member's answer (yes, maybe or no) and comment; adds the member as attendee if needed.
+     */
+    public function answer(Activity $activity, Member $member, int $status, string $comment): void
+    {
+        $attendee = $activity->getAttendeeFor($member);
+        if (null === $attendee) {
+            $attendee = new ActivityAttendee($activity, $member, $status, $comment);
+            $activity->addAttendee($attendee);
+            $this->entityManager->persist($attendee);
+        } else {
+            $attendee->setStatus($status);
+            $attendee->setComment($comment);
+        }
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Removes the member from the activity. Organizers stay: someone has to look after it.
+     */
+    public function leave(Activity $activity, Member $member): bool
+    {
+        $attendee = $activity->getAttendeeFor($member);
+        if (null === $attendee || $activity->isOrganizer($member)) {
+            return false;
+        }
+        $activity->removeAttendee($attendee);
+        $this->entityManager->remove($attendee);
+        $this->entityManager->flush();
+
+        return true;
+    }
+
+    /**
+     * Cancels the activity. As on the legacy pages every answer is set to cancelled; reactivating the
+     * activity sets them all back to yes (the original answers are not kept).
+     */
+    public function cancel(Activity $activity): void
+    {
+        $activity->setStatus(Activity::STATUS_CANCELLED);
+        foreach ($activity->getAttendees() as $attendee) {
+            $attendee->setStatus(ActivityAttendee::ACTIVITY_CANCELLED);
+        }
+        $this->entityManager->flush();
+    }
+
+    public function reactivate(Activity $activity): void
+    {
+        $activity->setStatus(Activity::STATUS_ACTIVE);
+        foreach ($activity->getAttendees() as $attendee) {
+            $attendee->setStatus(ActivityAttendee::ATTENDS_YES);
+        }
+        $this->entityManager->flush();
+    }
+
+    /**
+     * The attendees with an active account, grouped: organizers, then yes, maybe and no.
+     *
+     * @return array{organizers: ActivityAttendee[], yes: ActivityAttendee[], maybe: ActivityAttendee[], no: ActivityAttendee[]}
+     */
+    public function getAttendeesByAnswer(Activity $activity): array
+    {
+        $groups = ['organizers' => [], 'yes' => [], 'maybe' => [], 'no' => []];
+        $keys = [
+            ActivityAttendee::ATTENDS_YES => 'yes',
+            ActivityAttendee::ATTENDS_MAYBE => 'maybe',
+            ActivityAttendee::ATTENDS_NO => 'no',
+        ];
+        foreach ($activity->getAttendees() as $attendee) {
+            if (!\in_array($attendee->getAttendee()->getStatus(), MemberStatusType::ACTIVE_SEARCH_ARRAY, true)) {
+                continue;
+            }
+            if (1 === (int) $attendee->getOrganizer()) {
+                $groups['organizers'][] = $attendee;
+            }
+            $key = $keys[(int) $attendee->getStatus()] ?? null;
+            if (null !== $key) {
+                $groups[$key][] = $attendee;
+            }
+        }
+        foreach ($groups as &$group) {
+            usort($group, static fn (ActivityAttendee $a, ActivityAttendee $b) => strcasecmp(
+                $a->getAttendee()->getUsername(),
+                $b->getAttendee()->getUsername()
+            ));
+        }
+
+        return $groups;
+    }
+
+    public function getRadius(Member $member): int
+    {
+        $radius = (int) $member->getMemberPreference($this->getRadiusPreference())->getValue();
+
+        return \in_array($radius, ActivityRadiusType::DISTANCES, true) ? $radius : 25;
+    }
+
+    public function setRadius(Member $member, int $radius): void
+    {
+        $memberPreference = $member->getMemberPreference($this->getRadiusPreference());
+        $memberPreference->setValue((string) $radius);
+        $this->entityManager->persist($memberPreference);
+        $this->entityManager->flush();
+    }
+
+    private function getRadiusPreference(): Preference
+    {
+        /** @var Preference $preference */
+        $preference = $this->entityManager->getRepository(Preference::class)
+            ->findOneBy(['codename' => Preference::ACTIVITIES_NEAR_ME_RADIUS]);
+
+        return $preference;
+    }
+
+    /**
+     * The title is plain text: markup is removed, characters stay as they are (Twig escapes them on output). The
+     * description is HTML: what the purifier allows stays.
+     */
+    private function purify(ActivityDto $data): ActivityDto
+    {
+        $data->title = html_entity_decode(
+            $this->textPurifier->purify((string) $data->title),
+            \ENT_QUOTES | \ENT_HTML5,
+            'UTF-8'
+        );
+        $data->description = $this->purifier->purify((string) $data->description);
+
+        return $data;
+    }
+
+    /**
+     * One mail per member and activity (member_activity_notification_sent), also when the activity is saved again or
+     * a scheduled run overlaps.
+     *
+     * @param list<string> $notificationValues
+     */
+    private function sendActivityNotifications(Activity $activity, array $notificationValues): int
+    {
+        /** @var ActivityRepository $repository */
+        $repository = $this->entityManager->getRepository(Activity::class);
+        $members = $repository->getMembersToNotifyAboutActivity($activity, $notificationValues);
+        $sentRepository = $this->entityManager->getRepository(MemberActivityNotificationSent::class);
+
+        $sent = 0;
+        foreach ($members as $member) {
+            $lock = $this->lockFactory->createLock(\sprintf('member-activity-notification:%d:%d', $member->getId(), $activity->getId()));
+            if (!$lock->acquire()) {
+                continue;
+            }
+
+            try {
+                if (null !== $sentRepository->findOneBy(['member' => $member, 'activity' => $activity])) {
+                    continue;
+                }
+                if (!$this->mailer->sendActivityNotificationEmail($member, $activity)) {
+                    continue;
+                }
+
+                $this->entityManager->persist(new MemberActivityNotificationSent($member, $activity));
+                $this->entityManager->flush();
+                ++$sent;
+            } finally {
+                $lock->release();
+            }
+        }
+
+        return $sent;
+    }
+}

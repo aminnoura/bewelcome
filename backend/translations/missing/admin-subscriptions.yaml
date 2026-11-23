@@ -1,0 +1,12 @@
+admin.subscriptions.enable:
+  - 'Turn on'
+  - Button that turns all forum notifications of the member on.
+admin.subscriptions.disable:
+  - 'Turn off'
+  - Button that turns all forum notifications of the member off.
+admin.subscriptions.unknown:
+  - 'There is no member with this username.'
+  - Error on the volunteer page to turn forum notifications on or off, when the username doesn't exist.
+admin.subscriptions.member.placeholder:
+  - 'Type a username…'
+  - Placeholder of the member search on the volunteer page to turn forum notifications on or off.

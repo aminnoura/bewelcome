@@ -1,0 +1,336 @@
+<?php
+
+namespace App\Twig;
+
+use App\Service\LanguageNames;
+use App\Utilities\BlockWords;
+use App\Utilities\ForumUtilities;
+use Carbon\Carbon;
+use HTMLPurifier;
+use HTMLPurifier_HTML5Config;
+use HtmlTruncator\Truncator;
+use Override;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Contracts\Translation\TranslatorInterface;
+use Symfony\WebpackEncoreBundle\Asset\EntrypointLookupInterface;
+use Twig\Extension\AbstractExtension;
+use Twig\Extension\GlobalsInterface;
+use Twig\TwigFilter;
+use Twig\TwigFunction;
+
+/**
+ * @SuppressWarnings("PHPMD.TooManyPublicMethods")
+ *
+ * \todo Move to attributes as soon as getGlobals works in that setup. Alternatively split into runtime and template
+ * and check if we really need two extensions (see MemberExtension).
+ */
+class Extension extends AbstractExtension implements GlobalsInterface
+{
+    /**
+     * Extension constructor.
+     */
+    public function __construct(
+        private readonly RequestStack $requestStack,
+        protected TranslatorInterface $translator,
+        private readonly EntrypointLookupInterface $entrypointLookup,
+        private readonly LoggerInterface $logger,
+        private readonly array $locales,
+        private readonly string $publicDirectory,
+        private readonly LanguageNames $languageNames,
+        // the purifier bundle's cache (config/packages/exercise_html_purifier.yaml); HTML Purifier's default is in vendor
+        #[Autowire('%kernel.cache_dir%/htmlpurifier')]
+        private readonly string $purifierCacheDirectory,
+    ) {
+    }
+
+    #[Override]
+    public function getFunctions(): array
+    {
+        return [
+            new TwigFunction('ago', $this->ago(...)),
+            new TwigFunction(
+                'dump_it',
+                $this->dumpIt(...),
+                [
+                    'is_safe' => ['html'],
+                ]
+            ),
+            new TwigFunction(
+                'language_name',
+                $this->languageName(...),
+                [
+                    'is_safe' => ['html'],
+                ]
+            ),
+            new TwigFunction(
+                'language_name_translated',
+                $this->languageNameTranslated(...),
+                [
+                    'is_safe' => ['html'],
+                ]
+            ),
+            new TwigFunction('encore_entry_css_source', $this->getEncoreEntryCssSource(...)),
+            new TwigFunction('distance', $this->distance(...)),
+            new TwigFunction('sgn', $this->sgn(...)),
+        ];
+    }
+
+    /** a language's name in itself (intl, App\Service\LanguageNames) */
+    public function languageName(string $locale): string
+    {
+        return $this->languageNames->native($locale);
+    }
+
+    /** a language's name in the display language (intl) */
+    public function languageNameTranslated(string $locale, string $display): string
+    {
+        return $this->languageNames->in($locale, $display);
+    }
+
+    public function ago(Carbon $carbon): string
+    {
+        return $carbon->diffForHumans();
+    }
+
+    public function privacy(?Carbon $date): string
+    {
+        if (null === $date) {
+            return '';
+        }
+
+        if ($date->diffInDays() <= 7) {
+            return $this->translator->trans('lastloginprivacy');
+        }
+
+        return $date->diffForHumans();
+    }
+
+    #[Override]
+    public function getFilters(): array
+    {
+        return [
+            new TwigFilter(
+                'truncate',
+                $this->truncate(...),
+                [
+                    'is_safe' => ['html'],
+                ]
+            ),
+            new TwigFilter(
+                'url_update',
+                $this->urlUpdate(...),
+                [
+                    'is_safe' => ['html'],
+                ]
+            ),
+            new TwigFilter(
+                'prepare_newsletter',
+                $this->prepareNewsletter(...),
+                [
+                    'is_safe' => ['html'],
+                ]
+            ),
+            new TwigFilter(
+                'privacy',
+                $this->privacy(...),
+                [
+                    'is_safe' => ['html'],
+                ]
+            ),
+            new TwigFilter(
+                'user_text',
+                $this->userText(...),
+                [
+                    'is_safe' => ['html'],
+                ]
+            ),
+            new TwigFilter('block_words', BlockWords::found(...)),
+            new TwigFilter(
+                'mark_block_words',
+                BlockWords::mark(...),
+                [
+                    'is_safe' => ['html'],
+                ]
+            ),
+            new TwigFilter(
+                'forum_lightbox',
+                ForumUtilities::addLightboxToFigures(...),
+                [
+                    'is_safe' => ['html'],
+                ]
+            ),
+        ];
+    }
+
+    /**
+     * A (purified) text members wrote, ready to show: forum posts, comments, newsletters. Texts written with the
+     * editor are HTML already: newlines between their tags are not turned into <br> (that made big empty gaps), and
+     * empty paragraphs and long runs of <br> are dropped. Plain texts get their line breaks, with at most one empty
+     * line in a row. Purify before: the result is output as HTML.
+     */
+    public function userText(string $text): string
+    {
+        if (1 === preg_match('~<(p|div|br|ul|ol|li|h[1-6]|blockquote|figure|table|pre)\b~i', $text)) {
+            $text = preg_replace('~<p\b[^>]*>(?:\s|&nbsp;|&#160;|\x{00A0}|<br\s*/?>)*</p>~iu', '', $text) ?? $text;
+            $text = preg_replace('~(?:<br\s*/?>\s*){3,}~i', '<br><br>', $text) ?? $text;
+
+            return trim($text);
+        }
+
+        return nl2br(trim(preg_replace("~\R{3,}~u", "\n\n", $text) ?? $text));
+    }
+
+    /**
+     * Truncates a string up to a number of characters while preserving whole words and HTML tags.
+     */
+    public function truncate(string $text, int $length = 100, string $ellipsis = '&#8230;'): string
+    {
+        $truncator = new Truncator();
+        $truncated = $truncator->truncate($text, $length, [
+            'length_in_chars' => true,
+            'ellipsis' => $ellipsis,
+        ]);
+
+        return $truncated;
+    }
+
+    /**
+     * Removes domain name from all bewelcome links (www|beta|api) so that links work on all sub domains.
+     *
+     * @param string $text string to update
+     */
+    public function urlUpdate(string $text): string
+    {
+        return preg_replace(
+            '/(src|href)="http[s]?:\/\/(www|beta)\.bewelcome\.org\//i',
+            '$1="/',
+            $text
+        );
+    }
+
+    public function dumpIt($variable): string
+    {
+        return highlight_string(var_export($variable, true), true);
+    }
+
+    public function getEncoreEntryCssSource(string $entryName): string
+    {
+        $this->entrypointLookup->reset();
+        $files = $this->entrypointLookup
+            ->getCssFiles($entryName);
+        $source = '';
+        foreach ($files as $file) {
+            $source .= file_get_contents($this->publicDirectory . '/' . $file);
+        }
+
+        return $source;
+    }
+
+    /**
+     * @SuppressWarnings("PHPMD.StaticAccess")
+     * @SuppressWarnings("PHPMD.BooleanArgumentFlag")
+     */
+    public function prepareNewsletter(string $text, bool $website = false): string
+    {
+        $config = HTMLPurifier_HTML5Config::createDefault();
+        $config->set(
+            'HTML.Allowed',
+            'p,h2,h3,b,a[href],br,hr,i,u,strong,em,ol,ul,li,dl,dt,dd,img[src|alt|width|height],blockquote,del,'
+            . 'figure[class],figcaption'
+        );
+        $config->set('HTML.TargetBlank', true);
+        $config->set('AutoFormat.RemoveEmpty', true);
+        $config->set('Core.Encoding', 'UTF-8');
+        $config->set('AutoFormat.AutoParagraph', true);
+        $config->set('AutoFormat.Linkify', true);
+        $config->set('Cache.SerializerPath', $this->purifierCacheDirectory);
+
+        $purifier = new HTMLPurifier($config);
+        $text = $purifier->purify($text);
+
+        // now turn any figure/figcaption entries into <img>
+        if ($website) {
+            $centerOpen = '';
+            $centerClose = '';
+            $style = ' style="display: block; margin-left: auto; margin-right: auto; width: 60%;"';
+        } else {
+            $centerOpen = '<center>';
+            $centerClose = '</center>';
+            $style = '';
+        }
+        $result = preg_replace(
+            '%<figure.*?><img.*?src="(.*?)".*?><figcaption>(.*?)</figcaption></figure>%',
+            $centerOpen . '<img src="\1" alt="\2"' . $style . '>' . $centerClose,
+            $text
+        );
+
+        // Use the string 'embedded image' in case of no figcaption
+        $embeddedImage = $this->translator->trans('newsletter.embedded.image');
+        $result = preg_replace(
+            '%<figure.*?><img.*?src="(.*?)".*?>%',
+            $centerOpen . '<img src="\1" alt="' . htmlentities($embeddedImage) . '"' . $style . '>' . $centerClose,
+            (string) $result
+        );
+
+        $this->logger->info($text);
+        $this->logger->info($result);
+
+        return $result;
+    }
+
+    /**
+     * Distance between two points on the earth.
+     */
+    public function distance(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $radiantLat = deg2rad($lat2 - $lat1);
+        $radiantLng = deg2rad($lng2 - $lng1);
+
+        $a = sin($radiantLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($radiantLng / 2) ** 2;
+
+        return 12742 * asin(sqrt($a));
+    }
+
+    /**
+     * signum of the given (float) number.
+     */
+    public function sgn(float $number): int
+    {
+        return ($number > 0) ? 1 : (($number < 0) ? -1 : 0);
+    }
+
+    /**
+     * Name of this extension.
+     */
+    public function getName(): string
+    {
+        return 'LayoutKit';
+    }
+
+    public function getGlobals(): array
+    {
+        $version = '';
+        $locale = 'en';
+        $versionCreated = new Carbon();
+
+        if (null !== $this->requestStack->getCurrentRequest()) {
+            $locale = $this->requestStack->getSession()->get('locale', 'en');
+        }
+
+        if (file_exists('../VERSION')) {
+            $version = trim(file_get_contents('../VERSION'));
+            $versionCreated = Carbon::createFromTimestamp(filemtime('../VERSION'));
+        }
+
+        return [
+            'version' => $version,
+            'version_dt' => $versionCreated,
+            'title' => 'BeWelcome',
+            'locales' => $this->locales,
+            'robots' => 'ALL',
+            'locale' => $locale,
+        ];
+    }
+}

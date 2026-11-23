@@ -1,0 +1,292 @@
+<?php
+
+namespace App\Tests\Model;
+
+use App\Doctrine\DeleteRequestType;
+use App\Doctrine\InFolderType;
+use App\Doctrine\MessageStatusType;
+use App\Doctrine\SpamInfoType;
+use App\Entity\Member;
+use App\Entity\Message;
+use App\Entity\Subject;
+use App\Model\ConversationModel;
+use App\Service\Mailer;
+use DateTime;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\EntityRepository;
+use PHPUnit\Framework\MockObject\Stub;
+use PHPUnit\Framework\TestCase;
+use Symfony\Contracts\Translation\TranslatorInterface;
+
+class ConversationModelTest extends TestCase
+{
+    private EntityManagerInterface&Stub $entityManager;
+    private ConversationModel $model;
+
+    protected function setUp(): void
+    {
+        $this->entityManager = $this->createStub(EntityManagerInterface::class);
+        $this->model = $this->createModel($this->entityManager);
+    }
+
+    public function testMarkConversationPurgedUpdatesMessages(): void
+    {
+        $receiver = new Member();
+        $sender = new Member();
+        $message = new Message();
+        $message->setReceiver($receiver);
+        $message->setSender($sender);
+        $message->setDeleteRequest('');
+        $message->setFolder(InFolderType::SPAM);
+        $this->expectPersistAndFlush($message);
+
+        $conversation = [$message];
+
+        // Act: Receiver purges conversation
+        $this->model->markConversationPurged($receiver, $conversation);
+
+        // Assert: Message state updated
+        $this->assertEquals(DeleteRequestType::RECEIVER_PURGED, $message->getDeleteRequest());
+        $this->assertEquals('Normal', $message->getFolder());
+    }
+
+    public function testMarkConversationDeletedUpdatesMessages(): void
+    {
+        $receiver = new Member();
+        $sender = new Member();
+        $message = new Message();
+        $message->setReceiver($receiver);
+        $message->setSender($sender);
+        $message->setDeleteRequest('');
+        $message->setFolder(InFolderType::SPAM);
+        $this->expectPersistAndFlush($message);
+
+        $conversation = [$message];
+
+        // Act: Receiver deletes conversation
+        $this->model->markConversationDeleted($receiver, $conversation);
+
+        // Assert: Message state updated
+        $this->assertEquals(DeleteRequestType::RECEIVER_DELETED, $message->getDeleteRequest());
+        $this->assertEquals('Normal', $message->getFolder());
+    }
+
+    public function testMarkConversationAsSpamUpdatesStatusAndInfo(): void
+    {
+        $receiver = new Member();
+        $message = new Message();
+        $message->setReceiver($receiver);
+        $message->setFolder(InFolderType::NORMAL);
+        $message->setStatus(MessageStatusType::SENT);
+        $this->expectPersistAndFlush($message);
+
+        $conversation = [$message];
+
+        $this->model->markConversationAsSpam($receiver, $conversation, 'Spam comment');
+
+        $this->assertEquals(InFolderType::SPAM, $message->getFolder());
+        $this->assertEquals(MessageStatusType::CHECK, $message->getStatus());
+        $this->assertEquals(SpamInfoType::MEMBER_SAYS_SPAM, $message->getSpamInfo());
+        $this->assertEquals('Spam comment', $message->getCheckerComment());
+    }
+
+    public function testFormatConversationDetectsSpamPatterns(): void
+    {
+        $message = new Message();
+        $message->setMessage('Contact me at test (AT) example.com');
+        $message->setStatus(MessageStatusType::SENT);
+        $message->setFolder(InFolderType::NORMAL);
+
+        $this->model->formatConversation($message);
+
+        $this->assertEquals(InFolderType::SPAM, $message->getFolder());
+        $this->assertEquals(MessageStatusType::CHECK, $message->getStatus());
+        $this->assertEquals(SpamInfoType::SPAM_BLOCKED_WORD, $message->getSpamInfo());
+    }
+
+    public function testFormatConversationDetectsUppercaseObfuscatedAt(): void
+    {
+        $message = new Message();
+        $message->setMessage('TEST (AT) EXAMPLE.COM');
+        $message->setStatus(MessageStatusType::SENT);
+        $message->setFolder(InFolderType::NORMAL);
+
+        $this->model->formatConversation($message);
+
+        $this->assertEquals(InFolderType::SPAM, $message->getFolder());
+        $this->assertEquals(MessageStatusType::CHECK, $message->getStatus());
+        $this->assertEquals(SpamInfoType::SPAM_BLOCKED_WORD, $message->getSpamInfo());
+    }
+
+    public function testFormatConversationIgnoresCleanMessages(): void
+    {
+        $message = new Message();
+        $message->setMessage('Hello, how are you?');
+        $message->setStatus(MessageStatusType::SENT);
+        $message->setFolder(InFolderType::NORMAL);
+
+        $this->model->formatConversation($message);
+
+        $this->assertEquals(InFolderType::NORMAL, $message->getFolder());
+        $this->assertEquals(MessageStatusType::SENT, $message->getStatus());
+    }
+
+    public function testUnmarkConversationDeletedRestoresMessages(): void
+    {
+        $receiver = new Member();
+        $sender = new Member();
+        $message = new Message();
+        $message->setReceiver($receiver);
+        $message->setSender($sender);
+        // Start as deleted
+        $message->setDeleteRequest(DeleteRequestType::RECEIVER_DELETED);
+        $message->setFolder(InFolderType::SPAM);
+        $this->expectPersistAndFlush($message);
+
+        $conversation = [$message];
+
+        $this->model->unmarkConversationDeleted($receiver, $conversation);
+
+        // Should replace RECEIVER_DELETED relative to empty string or existing state.
+        $this->assertEquals('', $message->getDeleteRequest());
+        $this->assertEquals('Normal', $message->getFolder());
+    }
+
+    public function testUnmarkConversationAsSpamRestoresNormalState(): void
+    {
+        $receiver = new Member();
+        $message = new Message();
+        $message->setReceiver($receiver);
+        $message->setFolder(InFolderType::SPAM);
+        $message->setStatus(MessageStatusType::CHECK);
+        $message->setSpamInfo(SpamInfoType::MEMBER_SAYS_SPAM);
+        $this->expectPersistAndFlush($message);
+
+        $conversation = [$message];
+
+        $this->model->unmarkConversationAsSpam($receiver, $conversation);
+
+        $this->assertEquals(InFolderType::NORMAL, $message->getFolder());
+        $this->assertEquals(MessageStatusType::CHECKED, $message->getStatus());
+        $this->assertEquals(SpamInfoType::NO_SPAM, $message->getSpamInfo());
+    }
+
+    public function testMarkConversationAsReadSetsTime(): void
+    {
+        $receiver = new Member();
+        $message = new Message();
+        $message->setReceiver($receiver);
+        $message->setFirstRead(null); // Initialize to avoid type error
+        $senderMessage = new Message();
+        $senderMessage->setReceiver(new Member());
+        $senderMessage->setSender($receiver);
+        $senderMessage->setFirstRead(null);
+        $alreadyReadAt = new DateTime('2026-06-28 12:00:00');
+        $alreadyReadMessage = new Message();
+        $alreadyReadMessage->setReceiver($receiver);
+        $alreadyReadMessage->setFirstRead($alreadyReadAt);
+        $this->expectPersistAndFlush($message);
+
+        $conversation = [$message, $senderMessage, $alreadyReadMessage];
+
+        $this->model->markConversationAsRead($receiver, $conversation);
+
+        $this->assertNotNull($message->getFirstRead());
+        $this->assertNull($senderMessage->getFirstRead());
+        $this->assertSame($alreadyReadAt->getTimestamp(), $alreadyReadMessage->getFirstRead()->getTimestamp());
+    }
+
+    public function testGetLastMessageInConversationReturnsLatest(): void
+    {
+        $subject = new Subject();
+        $parent = new Message();
+        $parent->setSubject($subject);
+
+        $msg1 = new Message();
+        $msg2 = new Message();
+
+        $repo = $this->createMock(EntityRepository::class);
+        $repo->expects($this->once())->method('findBy')->with(['subject' => $subject])->willReturn([$msg1, $msg2]);
+
+        $this->entityManager = $this->createMock(EntityManagerInterface::class);
+        $this->entityManager->expects($this->once())->method('getRepository')->with(Message::class)->willReturn($repo);
+        $this->model = $this->createModel($this->entityManager);
+
+        $result = $this->model->getLastMessageInConversation($parent);
+
+        $this->assertSame($msg2, $result);
+    }
+
+    public function testIsMarkedCorrectly(): void
+    {
+        $message = new Message();
+        $message->setMessage('Hello, how are you?');
+        $this->assertTrue(SpamInfoType::NO_SPAM === $this->model->formatConversation($message)->getSpamInfo());
+
+        $message = new Message();
+        $message->setMessage('bewelcome.919823.shop');
+        $this->assertTrue(SpamInfoType::SPAM_BLOCKED_WORD === $this->model->formatConversation($message)->getSpamInfo());
+
+        $message = new Message();
+        $message->setMessage('This is verification scam');
+        $this->assertTrue(SpamInfoType::SPAM_BLOCKED_WORD === $this->model->formatConversation($message)->getSpamInfo());
+
+        $message = new Message();
+        $message->setMessage(<<<MSG
+            Hello\u{200b}!\u{200b}
+
+            F\u{200b}o\u{200b}r\u{200b} \u{200b}s\u{200b}e\u{200b}c\u{200b}u\u{200b}r\u{200b}i\u{200b}t\u{200b}y\u{200b} \u{200b}w\u{200b}e\u{200b} \u{200b}n\u{200b}e\u{200b}e\u{200b}d\u{200b} \u{200b}a\u{200b} \u{200b}q\u{200b}u\u{200b}i\u{200b}c\u{200b}k\u{200b} \u{200b}I\u{200b}D\u{200b} \u{200b}c\u{200b}h\u{200b}e\u{200b}c\u{200b}k\u{200b}.\u{200b}
+
+            W\u{200b}i\u{200b}t\u{200b}h\u{200b}o\u{200b}u\u{200b}t\u{200b} \u{200b}i\u{200b}t\u{200b} \u{200b}y\u{200b}o\u{200b}u\u{200b}r\u{200b} \u{200b}B\u{200b}e\u{200b}W\u{200b}e\u{200b}l\u{200b}c\u{200b}o\u{200b}m\u{200b}e\u{200b} \u{200b}a\u{200b}c\u{200b}c\u{200b}o\u{200b}u\u{200b}n\u{200b}t\u{200b} \u{200b}w\u{200b}i\u{200b}l\u{200b}l\u{200b} \u{200b}b\u{200b}e\u{200b} \u{200b}s\u{200b}u\u{200b}s\u{200b}p\u{200b}e\u{200b}n\u{200b}d\u{200b}e\u{200b}d\u{200b}.\u{200b}
+
+            V\u{200b}e\u{200b}r\u{200b}i\u{200b}f\u{200b}y\u{200b}\u{200b}h\u{200b}e\u{200b}r\u{200b}e\u{200b}:\u{200b}
+            https://tr.ee/DC82PQI\u{200b}f\u{200b} \u{200b}y\u{200b}o\u{200b}u\u{200b} \u{200b}c\u{200b}a\u{200b}n\u{200b}'t\u{200b} \u{200b}c\u{200b}l\u{200b}i\u{200b}c\u{200b}k\u{200b} \u{200b}o\u{200b}n\u{200b} \u{200b}t\u{200b}h\u{200b}e\u{200b} \u{200b}l\u{200b}i\u{200b}n\u{200b}k\u{200b},\u{200b} \u{200b}c\u{200b}o\u{200b}p\u{200b}y\u{200b} \u{200b}a\u{200b}n\u{200b}d\u{200b} \u{200b}p\u{200b}a\u{200b}s\u{200b}t\u{200b}e\u{200b} \u{200b}i\u{200b}t\u{200b} \u{200b}i\u{200b}n\u{200b}t\u{200b}o\u{200b} \u{200b}y\u{200b}o\u{200b}u\u{200b}r\u{200b} \u{200b}b\u{200b}r\u{200b}o\u{200b}w\u{200b}s\u{200b}e\u{200b}r\u{200b} \u{200b}(S\u{200b}a\u{200b}f\u{200b}a\u{200b}r\u{200b}i\u{200b}/C\u{200b}h\u{200b}r\u{200b}o\u{200b}m\u{200b}e\u{200b},\u{200b} \u{200b}e\u{200b}t\u{200b}c\u{200b}.\u{200b}).")
+            MSG);
+        $this->assertTrue(SpamInfoType::SPAM_BLOCKED_WORD === $this->model->formatConversation($message)->getSpamInfo());
+
+        $message = new Message();
+        $message->setMessage(<<<MSG
+            Always good to meet travelers people :) 
+
+            Hello! 
+
+            We are a couple currently on a road trip from the South of France to the European Juggling Convention in Slovenia! starting on August 1st. 
+
+             We’re always looking for ways to learn and teach, meet good people, and be in a pleasant environment close to nature. \u{200b}
+
+            We would love to come stay with you,  If you’re spontaneous and it's feel good.  
+
+            We’re not afraid to try new things, so we’ve learned to do a wide variety of things. 
+
+            And we have a tent! :)
+
+            It's the first time for us in bewelcome, but we are many years in trustroots and workaway. 
+
+            It will be amazing for us to rest and stay 1 or 2 nights before the convention(30,31- or just one even).
+
+            We like cooking and baking sourdough brade, we travel with one ;)
+
+             \u{200b}Thanks in advance. Hope to get to know you  
+
+             Guy and Lirane :)
+            MSG
+        );
+    }
+
+    private function expectPersistAndFlush(Message $message): void
+    {
+        $this->entityManager = $this->createMock(EntityManagerInterface::class);
+        $this->entityManager->expects($this->once())->method('persist')->with($message);
+        $this->entityManager->expects($this->once())->method('flush');
+        $this->model = $this->createModel($this->entityManager);
+    }
+
+    private function createModel(EntityManagerInterface $entityManager): ConversationModel
+    {
+        return new ConversationModel(
+            $this->createStub(Mailer::class),
+            $entityManager,
+            $this->createStub(TranslatorInterface::class)
+        );
+    }
+}

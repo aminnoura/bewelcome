@@ -1,0 +1,149 @@
+App\Entity\Location:
+    NewCountryReferenceGermany:
+        name: 'Germany'
+        latitude: 51.5000000
+        longitude: 10.5000000
+        featureClass: A
+        featureCode: PCLI
+        admin1Id: '00'
+        population: 3426354
+        modificationDate: '<DateTime()>'
+        geonameId: 2921044
+        countryId: 'DE'
+    NewCountryReferenceIndonesia:
+        name: 'Indonesia'
+        latitude: -5.0
+        longitude: 120.0
+        geonameId: 1643084
+        featureClass: A
+        featureCode: PCLI
+        admin1Id: '00'
+        population: 1643084
+        modificationDate: '<DateTime()>'
+        countryId: 'ID'
+    NewAdmin1ReferenceLandBerlin:
+        geonameId: 2950157
+        name: 'Land Berlin'
+        featureClass: A
+        featureCode: ADM1
+        admin1Id: '16'
+        countryId: '@NewCountryReferenceGermany->countryId'
+        population: 12
+        modificationDate: '<DateTime()>'
+        country: '@NewCountryReferenceGermany'
+        latitude: 52.5
+        longitude: 13.41667
+    NewAdmin1ReferenceProvinsiPapua:
+        geonameId: 1643012
+        name: 'Provinsi Papua'
+        featureClass: A
+        featureCode: ADM1
+        country: '@NewCountryReferenceIndonesia'
+        admin1Id: '36'
+        countryId: '@NewCountryReferenceIndonesia->countryId'
+        modificationDate: '<DateTime()>'
+        latitude: -2.59026
+        longitude: 139.41564
+    NewBerlin:
+        name: 'Berlin'
+        latitude: 52.5243700
+        longitude: 13.4105300
+        featureClass: P
+        featureCode: PPLC
+        admin1Id: '16'
+        countryId: 'DE'
+        population: 3426354
+        modificationDate: '<DateTime()>'
+        geonameId: 2950159
+        country: '@NewCountryReferenceGermany'
+        admin1: '@NewAdmin1ReferenceLandBerlin'
+    NewJayapura:
+        name: 'Jayapura'
+        latitude: -2.5428400
+        longitude: 140.7027600
+        featureClass: P
+        featureCode: PPLA
+        admin1Id: '@NewAdmin1ReferenceProvinsiPapua->admin1Id'
+        countryId: '@NewCountryReferenceIndonesia->countryId'
+        population: 134895
+        modificationDate: '<DateTime()>'
+        geonameId: 2082600
+        admin1: '@NewAdmin1ReferenceProvinsiPapua'
+        country: '@NewCountryReferenceIndonesia'
+    # London and Munich, with their countries and regions: places whose name differs by language (Londres, München),
+    # which the end-to-end suite asks the place suggestions for (sysadmins-infra, test_place_suggestions_in_the_site_language)
+    NewCountryReferenceUnitedKingdom:
+        name: 'United Kingdom'
+        latitude: 54.7584400
+        longitude: -2.6953100
+        featureClass: A
+        featureCode: PCLI
+        admin1Id: '00'
+        population: 66488991
+        modificationDate: '<DateTime()>'
+        geonameId: 2635167
+        countryId: 'GB'
+    NewAdmin1ReferenceEngland:
+        geonameId: 6269131
+        name: 'England'
+        featureClass: A
+        featureCode: ADM1
+        admin1Id: 'ENG'
+        countryId: '@NewCountryReferenceUnitedKingdom->countryId'
+        population: 57106398
+        modificationDate: '<DateTime()>'
+        country: '@NewCountryReferenceUnitedKingdom'
+        latitude: 52.16045
+        longitude: -0.70312
+    NewLondon:
+        name: 'London'
+        latitude: 51.5085300
+        longitude: -0.1257400
+        featureClass: P
+        featureCode: PPLC
+        admin1Id: 'ENG'
+        countryId: 'GB'
+        population: 8961989
+        modificationDate: '<DateTime()>'
+        geonameId: 2643743
+        country: '@NewCountryReferenceUnitedKingdom'
+        admin1: '@NewAdmin1ReferenceEngland'
+    NewAdmin1ReferenceBavaria:
+        geonameId: 2951839
+        name: 'Bavaria'
+        featureClass: A
+        featureCode: ADM1
+        admin1Id: '02'
+        countryId: '@NewCountryReferenceGermany->countryId'
+        population: 13076721
+        modificationDate: '<DateTime()>'
+        country: '@NewCountryReferenceGermany'
+        latitude: 49.0
+        longitude: 11.5
+    NewMunich:
+        name: 'Munich'
+        latitude: 48.1374300
+        longitude: 11.5754900
+        featureClass: P
+        featureCode: PPLA
+        admin1Id: '02'
+        countryId: 'DE'
+        population: 1260391
+        modificationDate: '<DateTime()>'
+        geonameId: 2867714
+        country: '@NewCountryReferenceGermany'
+        admin1: '@NewAdmin1ReferenceBavaria'
+
+App\Entity\LocationTranslation:
+    LondonInFrench:
+        __construct: ['fr', 'name', 'Londres']
+        object: '@NewLondon'
+    LondonInGerman:
+        __construct: ['de', 'name', 'London']
+        object: '@NewLondon'
+    MunichInFrench:
+        __construct: ['fr', 'name', 'Munich']
+        object: '@NewMunich'
+    MunichInGerman:
+        __construct: ['de', 'name', 'München']
+        object: '@NewMunich'

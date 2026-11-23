@@ -1,0 +1,145 @@
+profile.no.friends:
+    - 'No members marked as friends yet.'
+    - Text shown if a member hasn''t marked any member as friend
+profile.friend.add:
+    - 'Add as friend'
+    - Profile menu entry that opens the form to send this member a friendship request.
+profile.friend.edit:
+    - 'Edit friends entry'
+    - Menu entry if you already have a link to this member.
+friend.add:
+    - 'Add'
+    - Button label in the add friend (family and friends) form
+friend.edit:
+    - 'Edit'
+    - Button label in the add friend (family and friends) form
+profile.friend.delete.modal:
+    - 'Delete friend?'
+    - Headline of modal shown if user wants to delete a friend
+profile.friend.delete:
+    - 'Do you want to delete this friend permanently?'
+    - Abstract on the modal to delete a friend between members
+profile.friend.delete.no:
+    - '@no'
+profile.friend.delete.yes:
+    - '@yes'
+profile.friend.with:
+    - 'friend with {username}'
+    - Headline of the add/edit friend form
+profile.friends:
+    - 'Friends'
+    - Submenu item label
+flash.friend.removed:
+    - 'Friend link has been removed.'
+    - Flash message shown to the user, when a friend link has been removed.
+flash.friend.confirmed:
+    - 'Friendship has been confirmed.'
+    - Flash message shown to the user, when a friendship has been confirmed.
+friend.sender.says.exist:
+    - '{username} would like to add you as a friend on BeWelcome.'
+    - Text in the notification email about a friend request
+friend.confirm:
+    - 'Confirm'
+    - Button label in the friend request notification email
+friend.dismiss:
+    - 'Dismiss'
+    - Button label in the friend request notification email (saying that there is no friend)
+email.subject.friend:
+    - 'Are you a friend (or family member) of {username}?'
+    - Email subject for the request notification email
+friendship.sender.says.exist:
+    - '@friend.sender.says.exist'
+friendship.confirm:
+    - 'Confirm friendship'
+    - Main button in the mail about a friendship request; accepts the request.
+friendship.dismiss:
+    - 'Dismiss'
+    - Second button in the mail about a friendship request; declines the request.
+profile.edit.friend.keep:
+    - 'Keep as friend'
+    - Label on keep button on the edit friend form
+profile.edit.friend.remove:
+    - 'Remove friendship'
+    - Label on remove button on the edit friend form
+profile.friendship.remove.no:
+    - '@no'
+profile.friendship.remove.yes:
+    - '@yes'
+friend.add.headline:
+    - 'Add friend'
+    - Headline of the add friend (family and friends) form
+friend.add.blurb:
+    - "A member you add as a friend will be asked to confirm that friendship. After that happened the
+      friendship will be visible on your profile and the profile of your friend.
+      "
+    - Added on the 'Add a friend' page to guide members
+profile.add.friend.confirm:
+    - 'Send friend request'
+    - Submit button on the Add friend page.
+email.subject.friendship:
+    - '{username} would like to be your friend on BeWelcome'
+    - Subject of the mail about a friendship request. Keep {username}.
+profile.friend.pending:
+    - 'Friend request sent'
+    - Profile menu entry while the member hasn''t answered your friendship request yet.
+profile.friend.answer:
+    - 'Answer friend request'
+    - Profile menu entry when the member asked you to confirm a friendship.
+friend.confirmed.headline:
+    - 'Your friendship'
+    - Headline of the page about a confirmed friendship
+friend.confirmed.blurb:
+    - "You and {username} are friends. If that's no longer the case, you can remove the friendship. {username}
+      won't be notified, but the friendship disappears from both profiles."
+    - Text on the page about a confirmed friendship. Keep {username}.
+friend.sent.headline:
+    - 'Friend request sent'
+    - Headline of the page about a friendship request you sent
+friend.sent.blurb:
+    - "{username} hasn't confirmed your friendship yet. You can withdraw the request."
+    - Text on the page about a friendship request you sent. Keep {username}.
+friend.received.headline:
+    - 'Friend request'
+    - Headline of the page about a friendship request you received
+friend.received.blurb:
+    - "{username} would like to add you as a friend. Once you accept, the friendship shows on both profiles."
+    - Text on the page about a friendship request you received. Keep {username}.
+friend.accept:
+    - 'Accept'
+    - Button to accept a friendship request
+friend.decline:
+    - 'Decline'
+    - Button to decline a friendship request
+friend.withdraw:
+    - 'Withdraw request'
+    - Button to withdraw a friendship request you sent
+friendships.requests:
+    - 'Friend requests'
+    - Heading of the list of friendship requests waiting for your answer
+friendships.sent:
+    - 'Waiting for confirmation'
+    - Heading of the list of friendship requests you sent that aren''t answered yet
+friendships.manage:
+    - 'Manage friends'
+    - Link to the page with your friend requests and friends
+friendships.remove.confirm:
+    - 'Remove the friendship with {username}?'
+    - Question before removing a friendship. Keep {username}.
+flash.friendship.requested:
+    - '{username} has been asked to confirm your friendship.'
+    - Flash message after sending a friendship request. Keep {username}.
+flash.friendship.confirmed:
+    - 'You and {username} are now friends.'
+    - Flash message after accepting a friendship request. Keep {username}.
+flash.friendship.dismissed:
+    - 'The friend request of {username} has been declined.'
+    - Flash message after declining a friendship request. Keep {username}.
+flash.friendship.withdrawn:
+    - 'Your friend request to {username} has been withdrawn.'
+    - Flash message after withdrawing a friendship request. Keep {username}.
+flash.friendship.removed:
+    - 'The friendship with {username} has been removed.'
+    - Flash message after removing a friendship. Keep {username}.
+flash.friendship.not.active:
+    - 'You can add friends once your account is active: please fill in all required details and confirm your email address.'
+    - Notice when a member whose account isn't active yet asks for a friendship (shown on the other member's profile).

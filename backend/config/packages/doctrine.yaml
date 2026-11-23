@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=../../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+parameters:
+    database_host:     "%env(DB_HOST)%"
+    database_port:     "%env(DB_PORT)%"
+    database_name:     "%env(DB_NAME)%"
+    database_user:     "%env(DB_USER)%"
+    database_password: "%env(DB_PASS)%"
+
+doctrine:
+    dbal:
+        # Read the DB_* variables one by one at runtime, not a DATABASE_URL built from them in .env:
+        # prod images compile .env at build time (composer dump-env prod), which would bake the
+        # default credentials into the URL, and the servers only set DB_PASS etc. to override them.
+        driver: pdo_mysql
+        host: '%env(DB_HOST)%'
+        port: '%env(DB_PORT)%'
+        dbname: '%env(DB_NAME)%'
+        user: '%env(DB_USER)%'
+        password: '%env(DB_PASS)%'
+        # the version docker-compose.yml pulls (mariadb:12.3)
+        server_version: '12.3.3-MariaDB'
+
+        profiling_collect_backtrace: '%kernel.debug%'
+
+        charset: utf8mb4
+
+        default_table_options:
+            charset: utf8mb4
+            collate: utf8mb4_unicode_520_ci
+
+        # if using pdo_sqlite as your database driver:
+        #   1. add the path in parameters.yml
+        #     e.g. database_path: "%kernel.root_dir%/data/data.db3"
+        #   2. Uncomment database_path in parameters.yml.dist
+        #   3. Uncomment next line:
+        #     path:     "%database_path%"
+        types:
+            accommodation: App\Doctrine\AccommodationType
+            action_to_watch: App\Doctrine\ActionToWatchType
+            can_still_edit: App\Doctrine\PostCanStillEditType
+            comment_admin_action: App\Doctrine\CommentAdminActionType
+            comment_quality: App\Doctrine\CommentQualityType
+            comment_relations: App\Doctrine\CommentRelationsType
+            delete_request: App\Doctrine\DeleteRequestType
+            domain: App\Doctrine\DomainType
+            forum_delete_status: App\Doctrine\ForumDeleteStatusType
+            forum_visibility: App\Doctrine\ForumVisibilityType
+            group_membership_status: App\Doctrine\GroupMembershipStatusType
+            group_type: App\Doctrine\GroupType
+            in_folder: App\Doctrine\InFolderType
+            language_level: App\Doctrine\LanguageLevelType
+            member_status: App\Doctrine\MemberStatusType
+            message_status: App\Doctrine\MessageStatusType
+            report_status: App\Doctrine\ReportStatusType
+            report_type: App\Doctrine\ReportTypeType
+            spam_info: App\Doctrine\SpamInfoType
+            thread_reply: App\Doctrine\ThreadReplyType
+            typical_offer: App\Doctrine\TypicalOfferType
+            standard_offers: App\Doctrine\StandardOffersType
+            who_spoke_last: App\Doctrine\WhoSpokeLastType
+            translation_allowed: App\Doctrine\TranslationAllowedType
+            host_restrictions: App\Doctrine\HostRestrictionsType
+            leg_options: App\Doctrine\LegOptionsType
+            trip_additional_info: App\Doctrine\TripAdditionalInfoType
+            gender_type: App\Doctrine\GenderType
+            point: LongitudeOne\Spatial\DBAL\Types\Geometry\PointType
+
+        mapping_types:
+            enum:       string
+            set:        string
+
+    orm:
+        validate_xml_mapping: true
+        naming_strategy: doctrine.orm.naming_strategy.underscore
+        identity_generation_preferences:
+            Doctrine\DBAL\Platforms\PostgreSQLPlatform: identity
+        auto_mapping: true
+        mappings:
+            App:
+                type: attribute
+                is_bundle: false
+                dir: '%kernel.project_dir%/src/Entity'
+                prefix: 'App\Entity'
+                alias: App
+            gedmo_translatable:
+                type: attribute
+                prefix: Gedmo\Translatable\Entity
+                dir: "%kernel.project_dir%/vendor/gedmo/doctrine-extensions/src/Translatable/Entity"
+                alias: GedmoTranslatable # (optional) it will default to the name set for the mapping
+                is_bundle: false
+            gedmo_translator:
+                type: attribute
+                prefix: Gedmo\Translator\Entity
+                dir: "%kernel.project_dir%/vendor/gedmo/doctrine-extensions/src/Translator/Entity"
+                alias: GedmoTranslator # (optional) it will default to the name set for the mapping
+                is_bundle: false
+        controller_resolver:
+            auto_mapping: false
+
+        dql:
+            datetime_functions:
+                datediff: App\Doctrine\Functions\DateDiff
+                yearweek: App\Doctrine\Functions\YearWeek
+                year: DoctrineExtensions\Query\Mysql\Year
+            numeric_functions:
+                ST_Distance_Sphere: LongitudeOne\Spatial\ORM\Query\AST\Functions\MariaDB\SpDistanceSphere
+                geodistance: App\Doctrine\Functions\GeoDistance
+                ST_X: LongitudeOne\Spatial\ORM\Query\AST\Functions\Standard\StX
+                ST_Y: LongitudeOne\Spatial\ORM\Query\AST\Functions\Standard\StY
+            string_functions:
+                ST_GeomFromText: LongitudeOne\Spatial\ORM\Query\AST\Functions\Standard\StGeomFromText
+                ST_Envelope: LongitudeOne\Spatial\ORM\Query\AST\Functions\Standard\StEnvelope
+                ST_Contains: LongitudeOne\Spatial\ORM\Query\AST\Functions\Standard\StContains
+                MBRContains: LongitudeOne\Spatial\ORM\Query\AST\Functions\MariaDB\SpMbrContains
+                LineString: LongitudeOne\Spatial\ORM\Query\AST\Functions\MariaDB\SpLineString
+
+when@test:
+    doctrine:
+        dbal:
+            # "TEST_TOKEN" is typically set by ParaTest
+            dbname_suffix: '_test%env(default::TEST_TOKEN)%'
+
+when@prod:
+    doctrine:
+        orm:
+            query_cache_driver:
+                type: pool
+                pool: doctrine.system_cache_pool
+            result_cache_driver:
+                type: pool
+                pool: doctrine.result_cache_pool
+
+    framework:
+        cache:
+            pools:
+                doctrine.result_cache_pool:
+                    adapter: cache.app
+                doctrine.system_cache_pool:
+                    adapter: cache.system

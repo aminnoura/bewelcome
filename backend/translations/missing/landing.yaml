@@ -1,0 +1,248 @@
+landing.tab.visitors:
+    - 'Visitors'
+    - Tab header for the list of visitors to your area on the landing page
+trip.posted.by:
+    - 'posted by {username}'
+    - shows who posted the trip as part of the item on the landing page. Make sure to keep the {username} part intact.
+
+landing.search.placeholder:
+    - 'Search a city, a region...'
+    - Placeholder of the search field in the welcome banner of the home page, under "Where are you going?"
+
+landing.viewprofile:
+    - 'View my profile'
+    - Link to the member's own profile, next to their city in the welcome banner of the home page
+landing.search.mode.place:
+    - 'Place'
+    - Switch in the welcome banner of the home page to search around a place
+landing.search.mode.member:
+    - 'Member'
+    - Switch in the welcome banner of the home page to search a member by username
+landing.search.findmember:
+    - 'Find a member'
+    - Title of the member search in the welcome banner of the home page
+landing.search.member.placeholder:
+    - 'Type a username...'
+    - Placeholder of the member search field in the welcome banner of the home page
+landing.search.place.hint:
+    - 'Find hosts, travelers and activities around a place.'
+    - Hint under the place search field in the welcome banner of the home page
+landing.search.member.hint:
+    - 'Start typing and pick a match from the list.'
+    - Hint under the member search field in the welcome banner of the home page
+landing.search.submit:
+    - 'Search'
+    - Button of the search field in the welcome banner of the home page
+landing.stats.requests:
+    - 'stay requests to answer'
+    - Shown after a number in the welcome banner of the home page, e.g. "4 stay requests to answer"
+landing.stats.travelers:
+    - 'travelers coming to {city}'
+    - Shown after a number in the welcome banner of the home page, e.g. "5 travelers coming to Barcelona". Keep {city} intact.
+landing.stats.travelers.area:
+    - 'travelers coming to your area'
+    - Shown after a number in the welcome banner of the home page when the member has no city set
+landing.stats.activities:
+    - 'upcoming activities'
+    - Shown after a number in the welcome banner of the home page, e.g. "3 upcoming activities"
+landing.stats.trip:
+    - 'Plan a public trip'
+    - Highlighted link in the welcome banner of the home page that opens the form to create a trip
+landing.stats.trip.hint:
+    - 'Let hosts know you are coming'
+    - Small line under "Plan a public trip" in the welcome banner of the home page
+landing.stats.trip.short:
+    - 'Create a public trip'
+    - Highlighted link to create a trip in the welcome banner of the home page, on small screens
+landing.viewprofile.short:
+    - 'My profile'
+    - Short link to the member's own profile in the welcome banner of the home page, on small screens
+landing.stats.requests.short:
+    - 'requests to answer'
+    - Short label under a number in the welcome banner of the home page, on small screens
+landing.stats.travelers.short:
+    - 'travelers coming'
+    - Short label under a number in the welcome banner of the home page, on small screens
+landing.stats.activities.short:
+    - 'activities'
+    - Short label under a number in the welcome banner of the home page, on small screens
+landing.search.member.searching:
+    - 'Searching...'
+    - Shown with a loader in the member suggestions of the welcome banner of the home page while the search runs
+landing.hosting.switch:
+    - 'I can host travelers'
+    - Label of the hosting switch in the welcome banner of the home page, on small screens
+landing.banner.collapse:
+    - 'Show less'
+    - Button that folds the welcome banner of the home page down to the member line, on small screens
+landing.banner.expand:
+    - 'Show more'
+    - Button that unfolds the welcome banner of the home page (hosting switch, search and counters), on small screens
+landing.beinformed.previous:
+    - 'Previous links'
+    - Button that shows the previous page of links in the "Be informed" box of the home page
+landing.beinformed.next:
+    - 'Next links'
+    - Button that shows the next page of links in the "Be informed" box of the home page
+landing.tab.today:
+    - 'Threads with a new post today'
+    - Tooltip of the count next to the My groups tab on the home page
+landing.see.all:
+    - 'See all'
+    - Button under the Forum, My groups and Activities lists on the home page, opens the full list
+landing.thread.replies:
+    - '{count} replies'
+    - Tooltip of the replies count on the right of a forum or group thread on the home page. Keep {count} intact.
+landing.activities.online:
+    - 'Show online'
+    - Short switch label above the activities on the home page, shows the online activities too. Keep it short, it shares a line with Create activity on phones.
+landing.dash.messages:
+    - 'Messages'
+    - 'Home page: title of the messages card'
+landing.dash.coming.to:
+    - 'Coming to {city}'
+    - 'Home page: title of the card of members travelling to the member''s city. Keep {city}'
+landing.dash.see.trip:
+    - 'See trip'
+    - 'Home page, trips card: link that opens the trip'
+landing.dash.activities:
+    - 'Upcoming activities'
+    - 'Home page: title of the activities card'
+landing.dash.activities.all:
+    - 'All activities'
+    - 'Home page: link at the bottom of the activities card'
+landing.dash.visitors.all:
+    - 'All visitors'
+    - 'Home page: link at the bottom of the card with the members coming to the member''s area'
+landing.dash.groups:
+    - 'Group discussions'
+    - 'Home page: title of the card with the discussions of the member''s groups'
+landing.dash.groups.all:
+    - 'All discussions'
+    - 'Home page: link at the bottom of the group discussions card'
+landing.search.where:
+    - 'Where are you going?'
+    - 'Home page: placeholder of the place search in the welcome banner'
+landing.alert.requests:
+    - '{count, plural, one {# stay request} other {# stay requests}}'
+    - 'Home page: start of the line under the welcome banner when requests wait for an answer (in bold). Keep the # sign'
+landing.alert.waiting:
+    - 'waiting for your answer'
+    - 'Home page: end of the line under the welcome banner, after the number of stay requests'
+landing.alert.answer:
+    - 'Answer'
+    - 'Home page: link on the right of the line about stay requests waiting for an answer'
+landing.search.dates.known:
+    - 'Already know your dates?'
+    - 'Home page: text under the place search, before the link to plan a public trip'
+landing.plan.public.trip:
+    - 'Plan a public trip'
+    - 'Home page: link under the place search that opens the form to create a trip'
+landing.plan.public.trip.hint:
+    - "hosts will see you're coming"
+    - 'Home page: grey text after the link to plan a public trip'
+landing.search.by.username:
+    - 'Search by username'
+    - 'Home page: help under the member search'
+landing.alert.to.answer:
+    - 'to answer'
+    - 'Home page on phones: end of the line about stay requests, after the number of requests'
+landing.dash.waiting.you:
+    - 'Waiting for you'
+    - 'Home page, Messages card: small label on a stay request or invitation the member still has to answer'
+landing.dash.needs.host:
+    - 'Needs a host'
+    - 'Home page, Visitors card: label under a traveller who is looking for a host'
+landing.dash.online:
+    - 'Online'
+    - 'Home page, Upcoming activities card: label on an online activity'
+landing.dash.when.today:
+    - 'Today'
+    - 'Home page, Upcoming activities: label next to an activity that starts today'
+landing.dash.when.tomorrow:
+    - 'Tomorrow'
+    - 'Home page, Upcoming activities: label next to an activity that starts tomorrow'
+landing.dash.when.days:
+    - '{count, plural, one {In # day} other {In # days}}'
+    - 'Home page, Upcoming activities: label next to an activity that starts in a few days'
+landing.dash.when.weeks:
+    - '{count, plural, one {In a week} other {In # weeks}}'
+    - 'Home page, Upcoming activities: label next to an activity that starts in a few weeks'
+landing.dash.when.months:
+    - '{count, plural, one {In a month} other {In # months}}'
+    - 'Home page, Upcoming activities: label next to an activity that starts in a few months'
+landing.donate.reached:
+    - 'Goal reached'
+    - 'Home page, Donate box: badge once the goal of the year is reached'
+landing.donate.raised:
+    - 'raised for {years}'
+    - 'Home page, Donate box: under the amount given this year, years is like 2025–2026'
+landing.donate.share:
+    - '{percent}% of the goal'
+    - 'Home page, Donate box: how much of the goal of the year was given'
+landing.donate.goal:
+    - 'Goal {amount}'
+    - 'Home page, Donate box: under the bar, the goal of the year'
+landing.donate.togo:
+    - '{amount} to go'
+    - 'Home page, Donate box: under the bar, what is still missing to reach the goal'
+landing.donate.text:
+    - 'BeWelcome is run by volunteers and paid for by its members. Every euro helps.'
+    - 'Home page, Donate box: text above the Donate button while the goal is not reached'
+landing.donate.button:
+    - 'Donate'
+    - 'Home page, Donate box: button that opens the PayPal window'
+landing.donate.other:
+    - 'Other ways to give'
+    - 'Home page, Donate box: link to the donations page (bank transfer, HelloAsso)'
+landing.donate.thanks:
+    - 'Thank you!'
+    - 'Home page, Donate box: shown in the box once a donation was made'
+landing.donate.thanks.text:
+    - 'Your donation keeps BeWelcome free and running.'
+    - 'Home page, Donate box: text under the thank you'
+landing.groups.none.title:
+    - 'Your groups are quiet'
+    - 'Title in the Group discussions card of the home page when the member''s groups have no discussion'
+landing.groups.none.text:
+    - 'Join groups about places and things you love to meet members and swap tips.'
+    - 'Line under the title in the Group discussions card of the home page when there is no discussion'
+landing.groups.find:
+    - 'Find a group'
+    - 'Main button in the Group discussions card of the home page when there is no discussion, opens the groups search'
+landing.groups.start:
+    - 'Start a group'
+    - 'Second button in the Group discussions card of the home page when there is no discussion, creates a group'
+landing.activities.none.title:
+    - 'Nothing planned nearby'
+    - 'Title in the Upcoming activities card of the home page when there is no activity near the member'
+landing.activities.none.text:
+    - 'Organise a walk, a dinner or a meetup and meet members around you.'
+    - 'Line under the title in the Upcoming activities card of the home page when there is no activity'
+landing.activities.none.create:
+    - 'Create an activity'
+    - 'Main button in the Upcoming activities card of the home page when there is no activity'
+landing.messages.none.title:
+    - 'Your inbox is waiting'
+    - 'Title in the Messages card of the home page when the member has no message yet'
+landing.messages.none.text:
+    - 'Find a host or a local to meet, and say hello. Their answers will show up here.'
+    - 'Line under the title in the Messages card of the home page when the member has no message yet'
+landing.messages.none.find:
+    - 'Find members'
+    - 'Button in the Messages card of the home page when the member has no message yet, opens the search'
+landing.dash.see.trip.details:
+    - 'See trip details'
+    - 'Button at the bottom of a trip in the Visitors card of the home page, opens the trip in the side panel'
+landing.stays.title:
+    - 'Upcoming stays'
+    - 'Home page: title of the card with the accepted hosting requests and invitations still to come, as host or guest.'
+landing.stays.hosting:
+    - 'Your guest'
+    - 'Home page, Upcoming stays: under the name of a member who will stay at the member''s place.'
+landing.stays.guest:
+    - 'Your host'
+    - 'Home page, Upcoming stays: under the name of a member the member will stay with.'
+landing.stays.past:
+    - 'Past'
+    - 'Upcoming stays and stays calendar, label of a stay that is over.'

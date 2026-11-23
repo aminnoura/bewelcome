@@ -1,0 +1,380 @@
+<?php
+
+namespace App\Form;
+
+use App\Doctrine\GenderType;
+use App\Form\CustomDataClass\SearchFormRequest;
+use Override;
+use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Exception\AlreadySubmittedException;
+use Symfony\Component\Form\Exception\LogicException;
+use Symfony\Component\Form\Exception\UnexpectedTypeException;
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\HiddenType;
+use Symfony\Component\Form\Extension\Core\Type\SubmitType;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\Form\FormEvent;
+use Symfony\Component\Form\FormEvents;
+use Symfony\Component\OptionsResolver\OptionsResolver;
+
+class SearchFormType extends AbstractType
+{
+    /**
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
+     *
+     * Parameter $options not used but signature is given by symfony.
+     */
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+            ->setMethod('GET')
+            ->add('location', TextType::class, [
+                'label' => 'landing.whereyougo',
+                'error_bubbling' => true,
+                'help' => 'search.locations.help',
+            ])
+            ->add('keywords', TextType::class, [
+                'label' => 'texttofind',
+                'required' => false,
+            ])
+            ->addEventListener(FormEvents::PRE_SET_DATA, $this->preSetData(...))
+            ->addEventListener(FormEvents::PRE_SUBMIT, $this->preSubmit(...))
+        ;
+
+        $this->addHiddenFields($builder);
+        $this->addCheckboxes($builder);
+        $this->addVariableSelects($builder, $options);
+        $this->addAgeAndGenderSelects($builder);
+        $this->addSelects($builder);
+        $this->addButtons($builder);
+    }
+
+    /**
+     * @SuppressWarnings("PHPMD.StaticAccess")
+     */
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults([
+            'group_choices' => [],
+            'language_choices' => [],
+            'groups' => null, // keep for BC
+            'languages' => null, // keep for BC
+            'search_options' => null,
+            'validation_groups' => SearchFormRequest::determineValidationGroups(...),
+            'translation_domain' => 'messages',
+            'allow_extra_fields' => true,
+            'error_mapping' => [
+                '.' => 'location',
+            ],
+        ]);
+    }
+
+    #[Override]
+    public function getBlockPrefix(): string
+    {
+        return '';
+    }
+
+    /**
+     * Add 'see map' option in case the map shows result from a zoom/pan operation or
+     * an empty search location (\todo).
+     *
+     * @throws AlreadySubmittedException
+     * @throws LogicException
+     * @throws UnexpectedTypeException
+     */
+    public function preSetData(FormEvent $event): void
+    {
+        $data = $event->getData();
+        $form = $event->getForm();
+        $options = $form->getConfig()->getOptions();
+        $choices = [
+            'search.radius.exact' => 0,
+            'search.radius.5km' => 5,
+            'search.radius.10km' => 10,
+            'search.radius.15km' => 15,
+            'search.radius.20km' => 20,
+            'search.radius.50km' => 50,
+            'search.radius.100km' => 100,
+            'search.radius.200km' => 200,
+            'search.radius.500km' => 500,
+            'search.radius.1000km' => 1000,
+        ];
+        $showOnMap = (bool) $data->showOnMap;
+        if (true === $showOnMap) {
+            $choices = ['search.see_map' => -1] + $choices;
+        }
+        $form->add('distance', ChoiceType::class, [
+            'autocomplete' => true,
+            'plugins' => [],
+            'choices' => $choices,
+            'label' => 'label.radius',
+        ]);
+        if (null !== $options['search_options'] && '' !== $options['search_options']) {
+            $form
+                ->add('resetOptions', SubmitType::class, [
+                    'label' => 'search.options.reset',
+                    'attr' => [
+                        'class' => 'o-button o-button--outline me-1',
+                    ],
+                ])
+            ;
+        }
+    }
+
+    public function preSubmit(FormEvent $event): void
+    {
+        $form = $event->getForm();
+        if (!$form->has('resetOptions')) {
+            $form
+                ->add('resetOptions', SubmitType::class, [
+                    'label' => 'search.options.reset',
+                    'attr' => [
+                        'class' => 'o-button o-button--outline me-1',
+                    ],
+                ])
+            ;
+        }
+    }
+
+    protected function addVariableSelects(FormBuilderInterface $formBuilder, array $options): void
+    {
+        $groups = $options['group_choices'] ?: [];
+        if (empty($groups) && null !== $options['groups']) {
+            // Fallback for any other places using the old method
+            foreach ($options['groups'] as $group) {
+                if ($group->getApproved()) {
+                    $groups[$group->getName()] = $group->getId();
+                }
+            }
+        }
+        $languages = $options['language_choices'] ?: [];
+        if (empty($languages) && null !== $options['languages']) {
+            // Fallback for any other places using the old method
+            foreach ($options['languages'] as $language) {
+                $languages['lang_' . strtolower((string) $language->getShortCode())] = $language->getShortCode();
+            }
+        }
+        $formBuilder
+            ->add('groups', ChoiceType::class, [
+                'choices' => $groups,
+                'choice_translation_domain' => false,
+                'label' => 'groups',
+                'multiple' => true,
+                'required' => false,
+                'autocomplete' => true,
+            ])
+            ->add('languages', ChoiceType::class, [
+                'choices' => $languages,
+                'label' => 'languages',
+                'multiple' => true,
+                'required' => false,
+                'autocomplete' => true,
+            ]);
+    }
+
+    protected function addAgeAndGenderSelects(FormBuilderInterface $formBuilder): void
+    {
+        $minAgeArray = [];
+        for ($i = 18; $i <= 120; $i += 2) {
+            $minAgeArray[$i] = $i;
+        }
+        $maxAgeArray = [];
+        for ($i = 18; $i <= 120; $i += 2) {
+            $maxAgeArray[$i] = $i;
+        }
+        $formBuilder
+            ->add('min_age', ChoiceType::class, [
+                'autocomplete' => true,
+                'choices' => $minAgeArray,
+                'choice_translation_domain' => false,
+                'label' => 'findpeopleminimumage',
+                'translation_domain' => 'messages',
+                'required' => false,
+                'placeholder' => '',
+            ])
+            ->add('max_age', ChoiceType::class, [
+                'autocomplete' => true,
+                'choices' => $maxAgeArray,
+                'choice_translation_domain' => false,
+                'label' => 'findpeoplemaximumage',
+                'translation_domain' => 'messages',
+                'required' => false,
+                'placeholder' => '',
+            ])
+            ->add('gender', ChoiceType::class, [
+                'autocomplete' => true,
+                'multiple' => true,
+                'choices' => [
+                    'male' => GenderType::MALE,
+                    'female' => GenderType::FEMALE,
+                    'other' => GenderType::OTHER,
+                ],
+                'label' => 'gender',
+                'required' => false,
+                'translation_domain' => 'messages',
+            ]);
+    }
+
+    protected function addSelects(FormBuilderInterface $formBuilder): void
+    {
+        $formBuilder
+            ->add('can_host', ChoiceType::class, [
+                'label' => 'searchcanhostatleast',
+                'autocomplete' => true,
+                'plugins' => [],
+                'choices' => [
+                    1 => '1',
+                    2 => '2',
+                    3 => '3',
+                    4 => '4',
+                    5 => '5',
+                    10 => '10',
+                    20 => '20',
+                ],
+                'choice_translation_domain' => false,
+                'translation_domain' => 'messages',
+            ])
+            ->add('last_active', ChoiceType::class, [
+                'label' => 'search.filter.last.active',
+                'autocomplete' => true,
+                'plugins' => [],
+                'choices' => [
+                    'search.filter.last.active.1month' => 1,
+                    'search.filter.last.active.2months' => 2,
+                    'search.filter.last.active.3months' => 3,
+                    'search.filter.last.active.6months' => 6,
+                    'search.filter.last.active.year' => 12,
+                    'search.filter.last.active.2years' => 24,
+                    'search.filter.last.active.all' => 2400,
+                ],
+                'translation_domain' => 'messages',
+            ])
+            ->add('order', ChoiceType::class, [
+                'label' => 'label.order',
+                'autocomplete' => true,
+                'plugins' => [],
+                'choices' => [
+                    'search.order.accommodation' => \App\Repository\MemberRepository::ORDER_ACCOMMODATION,
+                    'search.order.distance' => \App\Repository\MemberRepository::ORDER_DISTANCE,
+                    'search.order.login' => \App\Repository\MemberRepository::ORDER_LOGIN,
+                    'search.order.comments' => \App\Repository\MemberRepository::ORDER_COMMENTS,
+                    'search.order.membership' => \App\Repository\MemberRepository::ORDER_MEMBERSHIP,
+                    'search.order.username' => \App\Repository\MemberRepository::ORDER_USERNAME,
+                ],
+                'translation_domain' => 'messages',
+            ])
+            ->add('direction', ChoiceType::class, [
+                'label' => 'label.direction',
+                'autocomplete' => true,
+                'plugins' => [],
+                'choices' => [
+                    'search.direction.descending' => \App\Repository\MemberRepository::DIRECTION_DESCENDING,
+                    'search.direction.ascending' => \App\Repository\MemberRepository::DIRECTION_ASCENDING,
+                ],
+            ])
+            ->add('items', ChoiceType::class, [
+                'label' => 'label.items',
+                'autocomplete' => true,
+                'plugins' => [],
+                'choices' => [
+                    5 => 5,
+                    10 => 10,
+                    20 => 20,
+                    50 => 50,
+                    100 => 100,
+                ],
+                'choice_translation_domain' => false,
+                'translation_domain' => 'messages',
+            ])
+        ;
+    }
+
+    private function addHiddenFields(FormBuilderInterface $formBuilder): void
+    {
+        $formBuilder
+            ->add('location_fullname', HiddenType::class)
+            ->add('location_name', HiddenType::class)
+            ->add('location_geoname_id', HiddenType::class)
+            ->add('location_latitude', HiddenType::class)
+            ->add('location_longitude', HiddenType::class)
+            ->add('location_admin_unit', HiddenType::class, [
+                // empty when the place picker sent no admin unit flag: a place, not an admin unit
+                'empty_data' => '0',
+            ])
+            ->add('showOnMap', HiddenType::class)
+        ;
+    }
+
+    private function addButtons(FormBuilderInterface $formBuilder): void
+    {
+        $formBuilder
+            ->add('updateMap', SubmitType::class, [
+                'label' => 'search.find.members',
+                'attr' => [
+                    'class' => 'o-button btn-primary',
+                ],
+            ])
+        ;
+    }
+
+    private function addCheckboxes(FormBuilderInterface $formBuilder): void
+    {
+        $formBuilder
+            ->add('accommodation_yes', CheckboxType::class, [
+                'label' => 'search.accommodation.yes',
+                'required' => false,
+            ])
+            ->add('accommodation_no', CheckboxType::class, [
+                'label' => 'search.accommodation.no',
+                'required' => false,
+            ])
+            ->add('offers_dinner', CheckboxType::class, [
+                'label' => 'search.offer.dinner',
+                'required' => false,
+            ])
+            ->add('offers_tour', CheckboxType::class, [
+                'label' => 'search.offer.guided.tour',
+                'required' => false,
+            ])
+            ->add('accessible', CheckboxType::class, [
+                'label' => 'search.offer.accessible',
+                'required' => false,
+            ])
+            ->add('has_profile_picture', CheckboxType::class, [
+                'label' => 'search.has.profile.picture',
+                'required' => false,
+            ])
+            ->add('has_about_me', CheckboxType::class, [
+                'label' => 'search.has.about.me',
+                'required' => false,
+            ])
+            ->add('no_smoking', CheckboxType::class, [
+                'label' => 'search.restriction.no.smoking',
+                'required' => false,
+            ])
+            ->add('no_alcohol', CheckboxType::class, [
+                'label' => 'search.restriction.no.alcohol',
+                'required' => false,
+            ])
+            ->add('no_drugs', CheckboxType::class, [
+                'label' => 'search.restriction.no.drugs',
+                'required' => false,
+            ])
+            ->add('has_comments', CheckboxType::class, [
+                'label' => 'search.filter.has.comments',
+                'required' => false,
+            ])
+            ->add('show_map', CheckboxType::class, [
+                'label' => 'search.show.map',
+                'required' => false,
+            ])
+            ->add('show_options', CheckboxType::class, [
+                'label' => 'search.show.options',
+                'required' => false,
+            ])
+        ;
+    }
+}

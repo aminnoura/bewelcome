@@ -1,0 +1,17 @@
+{
+    "source": {
+        "directories": [
+            "src/Model"
+        ],
+        "excludes": [
+            "src/Controller/SignupController"
+        ]
+    },
+    "timeout": 30,
+    "logs": {
+        "text": "reports/infection.log"
+    },
+    "mutators": {
+        "@default": true
+    }
+}

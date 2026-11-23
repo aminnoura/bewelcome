@@ -1,0 +1,128 @@
+<?php
+
+namespace App\Model\MockupProvider;
+
+use App\Doctrine\GroupType;
+use App\Entity\ForumPost;
+use App\Entity\ForumThread;
+use App\Entity\Group;
+use App\Entity\Member;
+use DateTime;
+use Doctrine\ORM\EntityManagerInterface;
+
+class GroupMockups implements MockupProviderInterface
+{
+    use MockupEntities;
+
+    private const array MOCKUPS = [
+        'group invitation' => [
+            'type' => 'email',
+            'template' => 'emails/group/invitation.html.twig',
+        ],
+        'group want in' => [
+            'type' => 'email',
+            'template' => 'emails/group/wantin.html.twig',
+        ],
+        'accepted invite' => [
+            'type' => 'email',
+            'template' => 'emails/group/accepted.invite.html.twig',
+        ],
+        'declined invite' => [
+            'type' => 'email',
+            'template' => 'emails/group/declined.invite.html.twig',
+        ],
+        'join approved' => [
+            'type' => 'email',
+            'template' => 'emails/group/join.approved.html.twig',
+        ],
+        'join declined' => [
+            'type' => 'email',
+            'template' => 'emails/group/join.declined.html.twig',
+        ],
+        'group approved' => [
+            'type' => 'email',
+            'template' => 'emails/group/approved.html.twig',
+            'description' => 'To the creator of a group that was approved.',
+        ],
+        'new group (volunteers)' => [
+            'type' => 'email',
+            'template' => 'emails/new.group.html.twig',
+            'description' => 'To the volunteers who approve groups (English only).',
+        ],
+        'group post (subscribed)' => [
+            'type' => 'email',
+            'template' => 'emails/notifications.html.twig',
+        ],
+        'group post (not subscribed)' => [
+            'type' => 'email',
+            'template' => 'emails/notifications.html.twig',
+        ],
+    ];
+
+    public function __construct(private readonly EntityManagerInterface $entityManager)
+    {
+    }
+
+    public function getFeature(): string
+    {
+        return 'groups';
+    }
+
+    public function getMockups(): array
+    {
+        return self::MOCKUPS;
+    }
+
+    public function getMockupVariables(array $parameters): array
+    {
+        // Use the first public group
+        $groupRepository = $this->entityManager->getRepository(Group::class);
+        $group = $groupRepository->findOneBy(
+            [
+                'type' => GroupType::PUBLIC,
+                'approved' => Group::APPROVED,
+            ],
+            ['created' => 'DESC']
+        );
+
+        /** @var Member $user */
+        $user = $parameters['user'];
+        $thread = self::withId(new ForumThread(), 1)
+            ->setTitle('Thread title')
+            ->setGroup($group);
+        $post = self::withId(new ForumPost(), 1)
+            ->setMessage('Post text')
+            ->setThread($thread)
+            ->setAuthor($parameters['admin'])
+            ->setCreated(new DateTime());
+
+        if ('group post (subscribed)' === $parameters['name']) {
+            $subscription = 123456;
+        } else {
+            $subscription = 0;
+        }
+
+        return [
+            'group' => $group,
+            'sender' => $parameters['admin'],
+            'admin' => $parameters['admin'],
+            'receiver' => $user,
+            'subject' => 'group.invitation',
+            'reason' => 'I just want to be a member of something.',
+            'username' => $user->getUsername(),
+            // the member who joins, was invited or created the group
+            'member' => $user,
+            'invitee' => $user,
+            'creator' => $user,
+            'notification' => [
+                'post' => $post,
+                'subscription' => $subscription,
+            ],
+        ];
+    }
+
+    public function getMockupParameter(?string $locale = null, ?string $feature = null): array
+    {
+        return [];
+    }
+}

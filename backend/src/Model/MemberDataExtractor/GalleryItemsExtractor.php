@@ -1,0 +1,55 @@
+<?php
+
+namespace App\Model\MemberDataExtractor;
+
+use App\Entity\Member;
+use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\WebpackEncoreBundle\Asset\EntrypointLookupInterface;
+use Twig\Environment;
+
+final class GalleryItemsExtractor extends AbstractExtractor implements ExtractorInterface
+{
+    public function __construct(
+        EntrypointLookupInterface $entrypointLookup,
+        Environment $environment,
+        ManagerRegistry $registry,
+        private readonly string $projectDir,
+    ) {
+        parent::__construct($entrypointLookup, $environment, $registry);
+    }
+
+    public function extract(Member $member, string $tempDir): array
+    {
+        $memberId = $member->getId();
+
+        $filesystem = new Filesystem();
+        $galleryPath = \sprintf('%s/data/gallery/member%s/', $this->projectDir, $memberId);
+
+        $hrefs = [];
+        if (is_dir($galleryPath)) {
+            // create gallery sub directory
+            $galleryDir = $tempDir . 'gallery/';
+            $filesystem->mkdir($galleryDir);
+            $directoryHandle = opendir($galleryPath);
+            if ($directoryHandle) {
+                while (false !== ($file = readdir($directoryHandle))) {
+                    if (!is_dir($file)) {
+                        $ext = $this->imageExtension($galleryPath . $file);
+                        $destination = $galleryDir . pathinfo($file, \PATHINFO_FILENAME) . $ext;
+                        $filesystem->copy(
+                            $galleryPath . $file,
+                            $galleryDir . pathinfo($file, \PATHINFO_FILENAME) . $ext
+                        );
+                        $hrefs[] = str_replace($tempDir, '', $destination);
+                    }
+                }
+                closedir($directoryHandle);
+            }
+        }
+
+        $this->writePersonalDataFile(['hrefs' => $hrefs], 'gallery', $tempDir . 'gallery.html');
+
+        return ['gallery' => \count($hrefs)];
+    }
+}

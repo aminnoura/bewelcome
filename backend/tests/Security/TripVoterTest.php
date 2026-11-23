@@ -1,0 +1,144 @@
+<?php
+
+namespace App\Tests\Security;
+
+use App\Doctrine\LegOptionsType;
+use App\Entity\Leg;
+use App\Entity\Member;
+use App\Entity\Trip;
+use App\Security\TripVoter;
+use DateTime;
+use Mockery;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
+use Symfony\Component\Security\Core\Authorization\Voter\VoterInterface;
+
+/**
+ * @SuppressWarnings("PHPMD.StaticAccess")
+ */
+class TripVoterTest extends TestCase
+{
+    public function testTripCreatorCanEditIfNotExpired(): void
+    {
+        $member = Mockery::mock(Member::class);
+        $token = Mockery::mock(TokenInterface::class, [
+            'getUser' => $member,
+        ]);
+        $tomorrow = new DateTime('+1day');
+        $leg = new Leg();
+        $leg->setDeparture($tomorrow);
+
+        $trip = new Trip();
+        $trip->setCreator($member);
+        $trip->addLeg($leg);
+
+        $tripVoter = new TripVoter();
+        $vote = $tripVoter->vote($token, $trip, [TripVoter::TRIP_EDIT]);
+
+        $this->assertSame(VoterInterface::ACCESS_GRANTED, $vote);
+    }
+
+    public function testTripCreatorCanNotEditIfExpired(): void
+    {
+        $member = Mockery::mock(Member::class);
+        $token = Mockery::mock(TokenInterface::class, [
+            'getUser' => $member,
+        ]);
+        $yesterday = new DateTime('-1day');
+        $leg = new Leg();
+        $leg->setDeparture($yesterday);
+
+        $trip = new Trip();
+        $trip->setCreator($member);
+        $trip->addLeg($leg);
+
+        $tripVoter = new TripVoter();
+        $vote = $tripVoter->vote($token, $trip, [TripVoter::TRIP_EDIT]);
+
+        $this->assertSame(VoterInterface::ACCESS_DENIED, $vote);
+    }
+
+    public function testTripCreatorCanViewIfExpired(): void
+    {
+        $member = Mockery::mock(Member::class);
+        $token = Mockery::mock(TokenInterface::class, [
+            'getUser' => $member,
+        ]);
+        $yesterday = new DateTime('-1day');
+        $leg = new Leg();
+        $leg->setDeparture($yesterday);
+
+        $trip = new Trip();
+        $trip->setCreator($member);
+        $trip->addLeg($leg);
+
+        $tripVoter = new TripVoter();
+        $vote = $tripVoter->vote($token, $trip, [TripVoter::TRIP_VIEW]);
+
+        $this->assertSame(VoterInterface::ACCESS_GRANTED, $vote);
+    }
+
+    public function testOnlyTripCreatorCanViewIfExpired(): void
+    {
+        $member = Mockery::mock(Member::class);
+        $token = Mockery::mock(TokenInterface::class, [
+            'getUser' => $member,
+        ]);
+        $yesterday = new DateTime('-1day');
+        $leg = new Leg();
+        $leg->setDeparture($yesterday);
+
+        $creator = Mockery::mock(Member::class);
+        $trip = new Trip();
+        $trip->setCreator($creator);
+        $trip->addLeg($leg);
+
+        $tripVoter = new TripVoter();
+        $vote = $tripVoter->vote($token, $trip, [TripVoter::TRIP_VIEW]);
+
+        $this->assertSame(VoterInterface::ACCESS_DENIED, $vote);
+    }
+
+    public function testCreatorCanViewCompletelyPrivateTrip(): void
+    {
+        $creator = Mockery::mock(Member::class);
+        $token = Mockery::mock(TokenInterface::class, [
+            'getUser' => $creator,
+        ]);
+        $tomorrow = new DateTime('+1day');
+        $leg = new Leg();
+        $leg->setDeparture($tomorrow);
+        $leg->setOptions([LegOptionsType::PRIVATE]);
+
+        $trip = new Trip();
+        $trip->setCreator($creator);
+        $trip->addLeg($leg);
+
+        $tripVoter = new TripVoter();
+        $vote = $tripVoter->vote($token, $trip, [TripVoter::TRIP_VIEW]);
+
+        $this->assertSame(VoterInterface::ACCESS_GRANTED, $vote);
+    }
+
+    public function testOnlyTripCreatorCanViewCompletelyPrivateTrip(): void
+    {
+        $member = Mockery::mock(Member::class);
+        $token = Mockery::mock(TokenInterface::class, [
+            'getUser' => $member,
+        ]);
+        $yesterday = new DateTime('+1day');
+        $leg = new Leg();
+        $leg->setDeparture($yesterday);
+        $leg->setOptions([LegOptionsType::PRIVATE]);
+
+        $creator = Mockery::mock(Member::class);
+        $trip = new Trip();
+        $trip->setCreator($creator);
+        $trip->addLeg($leg);
+
+        $tripVoter = new TripVoter();
+        $vote = $tripVoter->vote($token, $trip, [TripVoter::TRIP_VIEW]);
+
+        $this->assertSame(VoterInterface::ACCESS_DENIED, $vote);
+    }
+}

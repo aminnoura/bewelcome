@@ -1,0 +1,15 @@
+parameters:
+    level: 3
+    paths:
+        - src
+        - tests
+#        - build
+    excludePaths:
+        - vendor
+        - var
+        - src/Entity
+    symfony:
+        containerXmlPath: var/cache/dev/App_KernelDevDebugContainer.xml
+        constantHassers: false
+    doctrine:
+        ormRepositoryClass: Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository

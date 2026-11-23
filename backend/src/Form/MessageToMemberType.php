@@ -1,0 +1,60 @@
+<?php
+
+namespace App\Form;
+
+use App\Entity\Message;
+use Override;
+use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\Form\FormEvent;
+use Symfony\Component\Form\FormEvents;
+use Symfony\Component\OptionsResolver\OptionsResolver;
+use Symfony\Component\Validator\Constraints\NotBlank;
+
+class MessageToMemberType extends AbstractType
+{
+    /**
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
+     */
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+            ->add('message', CkEditorType::class, [
+                // member-written HTML: purified as it is shown (purify('custom') in the templates)
+                'purify_html' => true,
+                'purify_html_profile' => 'custom',
+                'attr' => [
+                    'placeholder' => 'please.enter.a.message',
+                    'class' => 'form-control editor',
+                ],
+                'constraints' => [
+                    new NotBlank(message: 'please.enter.a.message.text'),
+                ],
+            ])
+        ;
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, static function (FormEvent $event) {
+            /** @var Message $message */
+            $message = $event->getData();
+            $form = $event->getForm();
+            if ($message && (null !== $message->getSubject())) {
+                // set subject to read only if one exists already
+                $form->add('subject', SubjectType::class, ['disabled' => true]);
+            } else {
+                $form->add('subject', SubjectType::class);
+            }
+        });
+    }
+
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults([
+            'data_class' => Message::class,
+        ]);
+    }
+
+    #[Override]
+    public function getBlockPrefix(): string
+    {
+        return 'app_message';
+    }
+}

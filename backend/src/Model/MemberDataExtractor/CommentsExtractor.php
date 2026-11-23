@@ -1,0 +1,48 @@
+<?php
+
+namespace App\Model\MemberDataExtractor;
+
+use App\Entity\Comment;
+use App\Entity\Member;
+use App\Repository\CommentRepository;
+
+final class CommentsExtractor extends AbstractExtractor implements ExtractorInterface
+{
+    public function extract(Member $member, string $tempDir): array
+    {
+        // Comments the member left others
+        /** @var CommentRepository $commentRepository */
+        $commentRepository = $this->getRepository(Comment::class);
+        $commentsForMember = $commentRepository->getVisibleCommentsForMember($member);
+        $commentsFromMember = $commentRepository->getCommentsFromMember($member);
+
+        $comments = [];
+
+        /** @var Comment $comment */
+        foreach ($commentsForMember as $comment) {
+            $commentArray = [
+                'to' => null,
+                'from' => $comment,
+            ];
+            $comments[$comment->getFromMember()->getId()] = $commentArray;
+        }
+
+        /** @var Comment $comment */
+        foreach ($commentsFromMember as $comment) {
+            if (isset($comments[$comment->getToMember()->getId()])) {
+                $commentArray = $comments[$comment->getToMember()->getId()];
+                $commentArray['to'] = $comment;
+            } else {
+                $commentArray = [
+                    'to' => $comment,
+                    'from' => null,
+                ];
+            }
+            $comments[$comment->getToMember()->getId()] = $commentArray;
+        }
+
+        $this->writePersonalDataFile(['comments' => $comments], 'comments', $tempDir . 'comments.html');
+
+        return ['comments' => \count($comments)];
+    }
+}

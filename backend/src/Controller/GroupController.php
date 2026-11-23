@@ -1,0 +1,493 @@
+<?php
+
+namespace App\Controller;
+
+use App\Doctrine\GroupMembershipStatusType;
+use App\Doctrine\GroupType as DoctrineGroupType;
+use App\Dto\GroupCategorySuggestion;
+use App\Entity\Group;
+use App\Entity\GroupCategory;
+use App\Entity\GroupMembership;
+use App\Entity\Member;
+use App\Form\CustomDataClass\GroupRequest;
+use App\Form\GroupType;
+use App\Form\JoinGroupType;
+use App\Logger\Logger;
+use App\Model\GroupModel;
+use App\Repository\GroupCategoryRepository;
+use App\Repository\GroupRepository;
+use App\Security\GroupVoter;
+use App\Utilities\ActiveMemberTrait;
+use App\Utilities\GroupSubmenuTrait;
+use App\Utilities\MailLinkTrait;
+use App\Utilities\RedirectBackTrait;
+use App\Utilities\TranslatedFlashTrait;
+use App\Utilities\TranslatorTrait;
+use App\Utilities\UniqueFilenameTrait;
+use Doctrine\ORM\EntityManagerInterface;
+use Intervention\Image\Drivers\Gd\Driver;
+use Intervention\Image\ImageManager;
+use Symfony\Bridge\Doctrine\Attribute\MapEntity;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Exception\SignedUriException;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Attribute\IsSignatureValid;
+use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
+use Throwable;
+
+/**
+ * Class GroupController.
+ *
+ * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
+ * @SuppressWarnings("PHPMD.TooManyPublicMethods")
+ * @SuppressWarnings("PHPMD.ExcessiveClassComplexity")
+ *
+ * \todo Move membership handling into own controller.
+ */
+class GroupController extends AbstractController
+{
+    use ActiveMemberTrait;
+    use GroupSubmenuTrait;
+    use MailLinkTrait;
+    use RedirectBackTrait;
+    use TranslatedFlashTrait;
+    use TranslatorTrait;
+    use UniqueFilenameTrait;
+
+    public function __construct(
+        private GroupModel $groupModel,
+    ) {
+    }
+
+    /**
+     * @return RedirectResponse
+     */
+    #[Route(path: '/groups/', name: 'groups_redirect', priority: 10)]
+    public function redirectToOverviewPage()
+    {
+        /** @var Member|null $member */
+        $member = $this->getUser();
+        if (null !== $member && $member->getGroups()) {
+            return $this->redirectToRoute('groups_mygroups');
+        }
+
+        return $this->redirectToRoute('groups_search');
+    }
+
+    /**
+     * @return RedirectResponse
+     */
+    #[Route(path: '/groups/{groupId}/{path}', name: 'groups_redirect_path', requirements: ['groupId' => '\d+', 'path' => '.+'])]
+    public function groupsRedirectPath(Request $request)
+    {
+        // We only need the request
+        return $this->redirectGroup($request);
+    }
+
+    /**
+     * @return RedirectResponse
+     */
+    #[Route(path: '/groups/{groupId}', name: 'groups_redirect_group', requirements: ['groupId' => '\d+'])]
+    public function groupsRedirect(Request $request)
+    {
+        return $this->redirectGroup($request);
+    }
+
+    /**
+     * @SuppressWarnings("PHPMD.CyclomaticComplexity")
+     * @SuppressWarnings("PHPMD.NPathComplexity")
+     */
+    #[Route(path: '/group/{groupId}/join', name: 'join_group')]
+    public function join(Request $request, #[MapEntity(id: 'groupId')] Group $group): Response
+    {
+        /** @var Member $member */
+        $member = $this->getUser();
+        if ($group->isMember($member)) {
+            return $this->redirectToRoute('group_membersettings', [
+                'group_id' => $group->getId(),
+            ]);
+        }
+
+        if (DoctrineGroupType::INVITE_ONLY === $group->getType()) {
+            $this->addTranslatedFlash('notice', 'flash.group.need.invite');
+
+            return $this->redirectToRoute('groups');
+        }
+
+        /** @var GroupMembership $membership */
+        $membership = $group->getGroupMembership($member);
+        if (DoctrineGroupType::NEED_ACCEPTANCE === $group->getType()) {
+            // the group's admins couldn't see a member who isn't active yet: they ask once they are
+            $refused = $this->refusedUntilActive($member, 'flash.group.join.not.active', $this->redirectToRoute('group_start', ['group_id' => $group->getId()]));
+            if ($refused) {
+                return $refused;
+            }
+
+            // Check if a join request is currently open
+            if (false !== $membership) {
+                $this->addTranslatedFlash('notice', 'flash.group.already.applied');
+
+                return $this->redirectToRoute('group_start', ['group_id' => $group->getId()]);
+            }
+        }
+
+        if (DoctrineGroupType::PUBLIC === $group->getType()) {
+            if (false !== $membership && GroupMembershipStatusType::INVITED_INTO_GROUP === $membership->getStatus()) {
+                // Accept the invitation
+                return $this->acceptInviteToGroup($group, $member);
+            }
+        }
+
+        $joinForm = $this->createForm(JoinGroupType::class);
+        $joinForm->handleRequest($request);
+
+        if ($joinForm->isSubmitted() && $joinForm->isValid()) {
+            $data = $joinForm->getData();
+            $success = $this->groupModel->join($group, $member, $data, $request->getLocale());
+            if ($success) {
+                if (!$group->isPublic()) {
+                    $this->addTranslatedFlash('notice', 'flash.group.join.await.acceptance');
+                } else {
+                    $this->addTranslatedFlash('notice', 'flash.group.join.success');
+                }
+            } else {
+                $this->addTranslatedFlash('notice', 'flash.group.join.failure');
+            }
+
+            return $this->redirectToRoute('group_start', ['group_id' => $group->getId()]);
+        }
+
+        return $this->render('group/join.html.twig', [
+            'form' => $joinForm->createView(),
+            'group' => $group,
+            'submenu' => [
+                'active' => 'join',
+                'items' => $this->getSubmenuItems($member, $group),
+            ],
+        ]);
+    }
+
+    /**
+     * @throws AccessDeniedException
+     *
+     * @return RedirectResponse
+     */
+    #[Route(path: '/group/{groupId}/acceptjoin/{memberId}', name: 'group_accept_join', methods: ['GET'])]
+    #[IsSignatureValid]
+    public function approveJoin(
+        #[MapEntity(id: 'groupId')] Group $group,
+        #[MapEntity(id: 'memberId')] Member $member,
+        ?SignedUriException $invalidLink = null,
+    ) {
+        if (null !== $invalidLink) {
+            return $this->rejectMailLink('group_memberadministration', ['group_id' => $group->getId()]);
+        }
+
+        /** @var Member $admin */
+        $admin = $this->getUser();
+        if (!$group->isAdmin($admin)) {
+            throw $this->createAccessDeniedException('No group admin');
+        }
+
+        if ($this->groupModel->acceptJoin($group, $member, $admin)) {
+            $this->addTranslatedFlash('notice', 'flash.group.accepted.join', [
+                'name' => $group->getName(),
+                'username' => $member->getUsername(),
+            ]);
+        } else {
+            $this->addTranslatedFlash('notice', 'flash.group.membershipstatus.not.changed', [
+                'name' => $group->getName(),
+                'username' => $member->getUsername(),
+            ]);
+        }
+
+        return $this->redirectToRoute('group_start', ['group_id' => $group->getId()]);
+    }
+
+    /**
+     * @throws AccessDeniedException
+     *
+     * @return RedirectResponse
+     */
+    #[Route(path: '/group/{groupId}/declinejoin/{memberId}', name: 'group_decline_join', methods: ['GET'])]
+    #[IsSignatureValid]
+    public function declineJoin(
+        #[MapEntity(id: 'groupId')] Group $group,
+        #[MapEntity(id: 'memberId')] Member $member,
+        ?SignedUriException $invalidLink = null,
+    ) {
+        if (null !== $invalidLink) {
+            return $this->rejectMailLink('group_memberadministration', ['group_id' => $group->getId()]);
+        }
+
+        /** @var Member $admin */
+        $admin = $this->getUser();
+        if (!$group->isAdmin($admin)) {
+            throw $this->createAccessDeniedException('No group admin');
+        }
+
+        if ($this->groupModel->declineJoin($group, $member, $admin)) {
+            $this->addTranslatedFlash('notice', 'flash.group.declined.join', [
+                'name' => $group->getName(),
+                'username' => $member->getUsername(),
+            ]);
+        } else {
+            $this->addTranslatedFlash('notice', 'flash.group.membershipstatus.not.changed', [
+                'name' => $group->getName(),
+                'username' => $member->getUsername(),
+            ]);
+        }
+
+        return $this->redirectToRoute('group_start', ['group_id' => $group->getId()]);
+    }
+
+    /**
+     * @return RedirectResponse
+     */
+    #[Route(path: '/group/{groupId}/accept/{memberId}', name: 'accept_invite_to_group', methods: ['GET'])]
+    #[IsSignatureValid]
+    public function acceptInviteToGroup(
+        #[MapEntity(id: 'groupId')] Group $group,
+        #[MapEntity(id: 'memberId')] Member $member,
+        ?SignedUriException $invalidLink = null,
+    ) {
+        if (null !== $invalidLink) {
+            return $this->rejectMailLink('group_start', ['group_id' => $group->getId()]);
+        }
+
+        // only the invited member answers the invitation
+        if ($this->getUser() !== $member) {
+            throw $this->createAccessDeniedException();
+        }
+
+        $success = $this->groupModel->acceptInviteToGroup($group, $member);
+
+        if ($success) {
+            $this->groupModel->sendAdminNotificationAccepted($group, $member);
+            $this->addTranslatedFlash('notice', 'flash.invite.accepted');
+        } else {
+            $this->addTranslatedFlash('error', 'flash.invite.accepted.error');
+        }
+
+        return $this->redirectToRoute('group_start', ['group_id' => $group->getId()]);
+    }
+
+    /**
+     * @return RedirectResponse
+     */
+    #[Route(path: '/group/{groupId}/decline/{memberId}', name: 'decline_invite_to_group', methods: ['GET'])]
+    #[IsSignatureValid]
+    public function declineInviteToGroup(
+        #[MapEntity(id: 'groupId')] Group $group,
+        #[MapEntity(id: 'memberId')] Member $member,
+        ?SignedUriException $invalidLink = null,
+    ) {
+        if (null !== $invalidLink) {
+            return $this->rejectMailLink('group_start', ['group_id' => $group->getId()]);
+        }
+
+        // only the invited member answers the invitation
+        if ($this->getUser() !== $member) {
+            throw $this->createAccessDeniedException();
+        }
+
+        $success = $this->groupModel->declineInviteToGroup($group, $member);
+
+        if ($success) {
+            $this->groupModel->sendAdminNotificationDeclined($group, $member);
+            $this->addTranslatedFlash('notice', 'flash.invite.declined');
+        } else {
+            $this->addTranslatedFlash('error', 'flash.invite.declined.error');
+        }
+
+        return $this->redirectToRoute('group_start', ['group_id' => $group->getId()]);
+    }
+
+    /**
+     * @return RedirectResponse
+     */
+    #[Route(path: '/group/{groupId}/withdraw/{memberId}', name: 'withdraw_member_invite_to_group', methods: ['POST'])]
+    public function withdrawInviteMemberGroup(
+        Request $request,
+        #[MapEntity(id: 'groupId')] Group $group,
+        #[MapEntity(id: 'memberId')] Member $member,
+    ) {
+        $this->denyAccessUnlessGranted(GroupVoter::GROUP_ADMINISTER, $group);
+        if (!$this->isCsrfTokenValid("group-withdraw-{$group->getId()}-{$member->getId()}", (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
+        $success = $this->groupModel->withdrawInviteMemberToGroup($group, $member);
+
+        if ($success) {
+            $this->addTranslatedFlash('notice', 'flash.group.invite.withdrawn');
+        } else {
+            $this->addTranslatedFlash('error', 'flash.group.invite.withdrawn.error');
+        }
+
+        return $this->redirectBack($request, 'group_start', ['group_id' => $group->getId()]);
+    }
+
+    #[Route(
+        path: '/group/{id}/delete/true',
+        name: 'group_delete_confirmed',
+        requirements: ['id' => '\\d+'],
+        methods: ['POST'],
+        priority: 10,
+    )]
+    public function deleteGroup(Request $request, Group $group, Logger $logger): RedirectResponse
+    {
+        if (!$this->isCsrfTokenValid('group-delete-' . $group->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
+        /** @var Member $member */
+        $member = $this->getUser();
+        $isGroupsAdmin = $this->isGranted(Member::ROLE_ADMIN_GROUP)
+            && 10 === $member->getLevelForRight(Member::ROLE_ADMIN_GROUP);
+        if (!$group->isAdmin($member) && !$isGroupsAdmin) {
+            throw $this->createAccessDeniedException();
+        }
+
+        $groupId = $group->getId();
+        try {
+            $this->groupModel->delete($group);
+        } catch (Throwable) {
+            $this->addTranslatedFlash('error', 'flash.group.delete.error');
+
+            return $this->redirectToRoute('group_delete', ['group_id' => $groupId]);
+        }
+
+        $logger->write("Group #{$groupId} was deleted by member #{$member->getId()}", 'Group');
+
+        return $this->redirectToRoute('groups_redirect');
+    }
+
+    #[Route(path: '/new/group', name: 'new_group')]
+    public function createGroup(Request $request, Logger $logger): Response
+    {
+        /** @var Member $member */
+        $member = $this->getUser();
+
+        if ($refused = $this->refusedUntilActive($member, 'flash.group.not.confirmed', $this->redirectToRoute('groups_mygroups'))) {
+            return $refused;
+        }
+
+        $groupRequest = new GroupRequest();
+        $form = $this->createForm(GroupType::class, $groupRequest, [
+            'allowInvitationOnly' => $member->getLevelForRight(Member::ROLE_ADMIN_GROUP),
+            'locale' => $request->getLocale(),
+        ]);
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            $data = $form->getData();
+            /** @var Member $member */
+            $member = $this->getUser();
+
+            $groupPicture = $this->handleGroupPicture($data->picture);
+
+            $group = $this->groupModel->new($data, $request->getLocale(), $member, $groupPicture);
+
+            $this->addTranslatedFlash('notice', 'flash.group.create.successful', [
+                '%name%' => $group->getName(),
+            ]);
+
+            $logger->write('Group ' . $group->getName() . ' created by ' . $member->getUsername() . '.', 'Group');
+
+            return $this->redirectToRoute('groups_redirect');
+        }
+
+        return $this->render('group/create.html.twig', [
+            'form' => $form->createView(),
+        ]);
+    }
+
+    /**
+     * Up to three categories whose keywords or names are words of the group's name and description, for the
+     * suggestions of the group forms.
+     */
+    #[Route(path: '/groups/categories/suggest', name: 'group_categories_suggest', methods: ['POST'])]
+    public function suggestCategories(
+        #[MapRequestPayload] GroupCategorySuggestion $suggestion,
+        Request $request,
+        EntityManagerInterface $entityManager,
+    ): JsonResponse {
+        /** @var GroupCategoryRepository $categories */
+        $categories = $entityManager->getRepository(GroupCategory::class);
+        $locale = $request->getLocale();
+
+        return new JsonResponse(array_map(
+            static fn (GroupCategory $category): array => ['id' => $category->getId(), 'name' => $category->getName($locale), 'icon' => $category->getIcon()],
+            $categories->findSuggested($suggestion->text, $suggestion->selected, 3),
+        ));
+    }
+
+    #[Route(path: '/new/group/check', name: 'new_group_check')]
+    public function ajaxCheckNewGroup(Request $request, EntityManagerInterface $entityManager): JsonResponse
+    {
+        $groupName = trim($request->request->get('name'));
+
+        $html = '';
+        if (!empty($groupName)) {
+            $parts = explode(' ', $groupName);
+
+            /** @var GroupRepository $groupRepository */
+            $groupRepository = $entityManager->getRepository(Group::class);
+            $groups = $groupRepository->findByNameParts($parts);
+
+            // Check if there are duplicate groups and provide a list of these
+
+            $html = $this->renderView('group/check.html.twig', [
+                'groups' => $groups,
+            ]);
+        }
+
+        return new JsonResponse([
+            'html' => $html,
+        ]);
+    }
+
+    private function redirectGroup(Request $request)
+    {
+        $pathInfo = str_replace('/groups/', '/group/', $request->getPathInfo());
+
+        return new RedirectResponse($pathInfo);
+    }
+
+    /**
+     * @param UploadedFile $picture
+     *
+     * @return string
+     *
+     * @SuppressWarnings("PHPMD.StaticAccess")
+     */
+    private function handleGroupPicture($picture)
+    {
+        // if a file was uploaded move it into the image storage
+        $groupImageDir = $this->getParameter('group_directory');
+        if (null !== $picture) {
+            $fileName = $this->generateUniqueFileName() . '.' . $picture->guessExtension();
+
+            // moves the file to the directory where group images are stored
+            $picture->move(
+                $groupImageDir,
+                $fileName
+            );
+            $imageManager = new ImageManager(new Driver());
+            $img = $imageManager->decodePath($groupImageDir . '/' . $fileName);
+            $img->scale(width: 80);
+            $img->save($groupImageDir . '/thumb' . $fileName);
+
+            return $fileName;
+        }
+
+        return null;
+    }
+}

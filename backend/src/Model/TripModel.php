@@ -1,0 +1,367 @@
+<?php
+
+namespace App\Model;
+
+use App\Dto\TripDto;
+use App\Entity\Leg;
+use App\Entity\Location;
+use App\Entity\Member;
+use App\Entity\MemberLegHidden;
+use App\Entity\MemberLegNotificationSent;
+use App\Entity\Preference;
+use App\Entity\Trip;
+use App\Repository\LegRepository;
+use App\Repository\TripRepository;
+use App\Service\Mailer;
+use DateTime;
+use DateTimeInterface;
+use Doctrine\ORM\EntityManagerInterface;
+use InvalidArgumentException;
+use Pagerfanta\Doctrine\ORM\QueryAdapter;
+use Pagerfanta\Pagerfanta;
+
+class TripModel
+{
+    private const array ALLOWED_TRIPS_RADIUS = [0, 5, 10, 20, 50, 100];
+    private const array SCHEDULED_TRIP_NOTIFICATIONS = [
+        Preference::TRIP_NOTIFICATIONS_DAILY,
+        Preference::TRIP_NOTIFICATIONS_WEEKLY,
+        Preference::TRIP_NOTIFICATIONS_MONTHLY,
+    ];
+
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        private readonly ?Mailer $mailer = null,
+    ) {
+    }
+
+    public function paginateTripsOfMember(Member $member, int $page): Pagerfanta
+    {
+        /** @var TripRepository $repository */
+        $repository = $this->entityManager->getRepository(Trip::class);
+        $query = $repository->queryTripsOfMember($member);
+
+        $paginator = new Pagerfanta(new QueryAdapter($query, false));
+        // \todo: Remove after testing.
+        $paginator->setMaxPerPage(10);
+        $paginator->setCurrentPage($page);
+
+        return $paginator;
+    }
+
+    public function checkTripsRadius($member, $radius)
+    {
+        if (!\in_array($radius, self::ALLOWED_TRIPS_RADIUS, true)) {
+            return $this->getTripsRadius($member);
+        }
+
+        return $radius;
+    }
+
+    public function setTripsRadius($member, $radius): void
+    {
+        $preferenceRepository = $this->entityManager->getRepository(Preference::class);
+
+        /** @var Preference $preference */
+        $preference = $preferenceRepository->findOneBy(['codename' => Preference::TRIPS_VICINITY_RADIUS]);
+        $memberPreference = $member->getMemberPreference($preference);
+        $memberPreference->setValue($radius);
+        $this->entityManager->persist($memberPreference);
+        $this->entityManager->flush();
+    }
+
+    public function getTripsRadius(Member $member): int
+    {
+        $preferenceRepository = $this->entityManager->getRepository(Preference::class);
+
+        /** @var Preference $preference */
+        $preference = $preferenceRepository->findOneBy(['codename' => Preference::TRIPS_VICINITY_RADIUS]);
+        $memberPreference = $member->getMemberPreference($preference);
+
+        return (int) $memberPreference->getValue();
+    }
+
+    public function checkTripCreateOrEditData(TripDto $data): array
+    {
+        $errors = [];
+        $legs = $data->legs;
+        $keys = $legs->getKeys();
+
+        for ($i = 0; $i < \count($keys); ++$i) {
+            for ($j = $i + 1; $j < \count($keys); ++$j) {
+                $a = $legs[$keys[$i]];
+                $b = $legs[$keys[$j]];
+                // (StartA < EndB) and (EndA > StartB)
+                if ($a->arrival < $b->departure && $a->departure > $b->arrival) {
+                    $errors[] = [
+                        'leg' => $i,
+                        'field' => 'duration',
+                        'error' => 'trip.error.date.overlap',
+                    ];
+                    $errors[] = [
+                        'leg' => $j,
+                        'field' => 'duration',
+                        'error' => 'trip.error.date.overlap',
+                    ];
+                }
+            }
+
+            if (empty($legs[$keys[$i]]->options)) {
+                $errors[] = [
+                    'leg' => $i,
+                    'field' => 'options',
+                    'error' => 'trip.error.no.options',
+                ];
+            }
+        }
+
+        return $errors;
+    }
+
+    public function orderTripLegs(TripDto &$tripDto): void
+    {
+        $legs = iterator_to_array($tripDto->legs);
+        usort($legs, static function ($a, $b) {
+            $arrivalA = $a->arrival;
+            $arrivalB = $b->arrival;
+
+            if ($arrivalA === $arrivalB) {
+                return 0;
+            }
+
+            return ($arrivalA <= $arrivalB) ? -1 : 1;
+        });
+
+        $tripDto->legs->clear();
+
+        foreach ($legs as $leg) {
+            $tripDto->legs->add($leg);
+        }
+    }
+
+    public function syncLegs(Trip $trip, TripDto $tripDto): void
+    {
+        $existingLegs = [];
+        foreach ($trip->getLegs() as $leg) {
+            if (null !== $leg->getId()) {
+                $existingLegs[$leg->getId()] = $leg;
+            }
+        }
+
+        $locationRepository = $this->entityManager->getRepository(Location::class);
+        $keptIds = [];
+
+        foreach ($tripDto->legs as $legDto) {
+            $leg = null !== $legDto->id ? ($existingLegs[$legDto->id] ?? null) : null;
+
+            if (null === $leg) {
+                $leg = new Leg();
+                $trip->addLeg($leg);
+            } else {
+                $keptIds[] = $legDto->id;
+            }
+
+            $leg->setArrival($legDto->arrival);
+            $leg->setDeparture($legDto->departure);
+            $leg->setOptions($legDto->options);
+            $leg->setLocation(
+                null !== $legDto->location
+                    ? $locationRepository->findOneBy(['geonameId' => $legDto->location])
+                    : null
+            );
+        }
+
+        foreach ($existingLegs as $id => $leg) {
+            if (!\in_array($id, $keptIds, true)) {
+                $trip->removeLeg($leg);
+            }
+        }
+    }
+
+    public function hideTrip(Trip $trip): void
+    {
+        $trip->setDeleted(new DateTime());
+
+        $this->entityManager->persist($trip);
+        $this->entityManager->flush();
+    }
+
+    public function markLegAsHidden(Member $member, Leg $leg): void
+    {
+        $repository = $this->entityManager->getRepository(MemberLegHidden::class);
+        $hidden = $repository->findOneBy(['member' => $member, 'leg' => $leg]);
+
+        if (null === $hidden) {
+            $this->entityManager->persist(new MemberLegHidden($member, $leg));
+            $this->entityManager->flush();
+        }
+    }
+
+    public function notifyHostsAboutTrip(Trip $trip): void
+    {
+        foreach ($trip->getLegs() as $leg) {
+            $this->notifyHostsAboutVisitors($leg);
+        }
+    }
+
+    public function notifyHostsAboutVisitors(Leg $leg): int
+    {
+        return $this->sendLegNotifications($leg, [Preference::TRIP_NOTIFICATIONS_IMMEDIATELY]);
+    }
+
+    public function sendScheduledTripNotifications(
+        string $frequency,
+        DateTimeInterface $createdSince,
+        DateTimeInterface $createdUntil,
+    ): int {
+        if (!\in_array($frequency, self::SCHEDULED_TRIP_NOTIFICATIONS, true)) {
+            throw new InvalidArgumentException('Unsupported trip notification frequency.');
+        }
+
+        /** @var TripRepository $tripRepository */
+        $tripRepository = $this->entityManager->getRepository(Trip::class);
+        /** @var LegRepository $legRepository */
+        $legRepository = $this->entityManager->getRepository(Leg::class);
+        $sentRepository = $this->entityManager->getRepository(MemberLegNotificationSent::class);
+
+        // the legs of the period per host who wasn't told about them yet
+        $hosts = [];
+        $legs = [];
+        foreach ($tripRepository->findTripsCreatedBetween($createdSince, $createdUntil) as $trip) {
+            foreach ($trip->getLegs() as $leg) {
+                foreach ($legRepository->getMembersToNotifyAboutLeg($leg, [$frequency]) as $host) {
+                    if (null !== $sentRepository->findOneBy(['member' => $host, 'leg' => $leg])) {
+                        continue;
+                    }
+                    $hosts[$host->getId()] = $host;
+                    $legs[$host->getId()][] = $leg;
+                }
+            }
+        }
+
+        // one mail a host: the digest of the period
+        $sent = 0;
+        foreach ($hosts as $hostId => $host) {
+            $lockName = $this->acquireDigestLock($host);
+            if (null === $lockName) {
+                continue;
+            }
+
+            try {
+                if (true !== $this->mailer?->sendTripDigestEmail($host, $legs[$hostId], $frequency)) {
+                    continue;
+                }
+
+                foreach ($legs[$hostId] as $leg) {
+                    $this->entityManager->persist(new MemberLegNotificationSent($host, $leg));
+                }
+                $this->entityManager->flush();
+                ++$sent;
+            } finally {
+                $this->releaseTripNotificationLock($lockName);
+            }
+        }
+
+        return $sent;
+    }
+
+    public function hasTripExpired(Trip $trip)
+    {
+        return $trip->isExpired();
+    }
+
+    public function copyTrip(Trip $trip)
+    {
+        $em = $this->entityManager;
+
+        $newTrip = clone $trip;
+        $newTrip->setSummary($trip->getSummary() . ' - copy');
+        $newTrip->setUpdated(new DateTime());
+
+        // Move legs arrival and departure consistently +1month
+        $nextMonth = new DateTime()->modify('+1month');
+        $firstArrival = $trip->getLegs()->first()->getArrival();
+        $adjust = $firstArrival->diff($nextMonth);
+
+        foreach ($trip->getLegs() as $leg) {
+            $newLeg = clone $leg;
+            $newLeg->setArrival($leg->getArrival()->add($adjust));
+            $newLeg->setDeparture($leg->getDeparture()->add($adjust));
+            $newLeg->setInvitedBy(null);
+            $newTrip->addLeg($newLeg);
+            $em->persist($newLeg);
+            $em->flush();
+        }
+
+        $em->persist($newTrip);
+        $em->flush();
+
+        return $newTrip;
+    }
+
+    private function sendLegNotifications(Leg $leg, array $notificationValues): int
+    {
+        /** @var LegRepository $repository */
+        $repository = $this->entityManager->getRepository(Leg::class);
+        $hosts = $repository->getMembersToNotifyAboutLeg($leg, $notificationValues);
+
+        if ([] === $hosts) {
+            return 0;
+        }
+
+        $sentRepository = $this->entityManager->getRepository(MemberLegNotificationSent::class);
+        $sent = [];
+        $sentCount = 0;
+        foreach ($hosts as $host) {
+            $hostId = $host->getId();
+            if (isset($sent[$hostId])) {
+                continue;
+            }
+
+            $sent[$hostId] = true;
+            $lockName = $this->acquireLegNotificationLock($host, $leg);
+            if (null === $lockName) {
+                continue;
+            }
+
+            try {
+                if (null !== $sentRepository->findOneBy(['member' => $host, 'leg' => $leg])) {
+                    continue;
+                }
+
+                if (true !== $this->mailer?->sendTripNotificationEmail($host, $leg)) {
+                    continue;
+                }
+
+                $this->entityManager->persist(new MemberLegNotificationSent($host, $leg));
+                $this->entityManager->flush();
+                ++$sentCount;
+            } finally {
+                $this->releaseTripNotificationLock($lockName);
+            }
+        }
+
+        return $sentCount;
+    }
+
+    private function acquireLegNotificationLock(Member $member, Leg $leg): ?string
+    {
+        $lockName = \sprintf('member-leg-notification-sent:%d:%d', $member->getId(), $leg->getId());
+        $locked = $this->entityManager->getConnection()->fetchOne('SELECT GET_LOCK(?, 0)', [$lockName]);
+
+        return 1 === (int) $locked ? $lockName : null;
+    }
+
+    private function acquireDigestLock(Member $member): ?string
+    {
+        $lockName = \sprintf('member-trip-digest:%d', $member->getId());
+        $locked = $this->entityManager->getConnection()->fetchOne('SELECT GET_LOCK(?, 0)', [$lockName]);
+
+        return 1 === (int) $locked ? $lockName : null;
+    }
+
+    private function releaseTripNotificationLock(string $lockName): void
+    {
+        $this->entityManager->getConnection()->fetchOne('SELECT RELEASE_LOCK(?)', [$lockName]);
+    }
+}

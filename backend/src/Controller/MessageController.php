@@ -1,0 +1,181 @@
+<?php
+
+namespace App\Controller;
+
+use App\Entity\Member;
+use App\Entity\Message;
+use App\Form\MessageToMemberType;
+use App\Model\ConversationModel;
+use App\Security\MemberVoter;
+use App\Service\InboxFolders;
+use App\Service\MessageSender;
+use App\Utilities\ActiveMemberTrait;
+use App\Utilities\AllowContactCheck;
+use App\Utilities\ContactPanelTrait;
+use App\Utilities\ConversationThread;
+use App\Utilities\RedirectBackTrait;
+use App\Utilities\TranslatedFlashTrait;
+use App\Utilities\TranslatorTrait;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+
+/**
+ * Class MessageController.
+ *
+ * Ignore complexity warning. \todo fix this.
+ *
+ * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
+ * @SuppressWarnings("PHPMD.CyclomaticComplexity")
+ * @SuppressWarnings("PHPMD.ExcessiveClassComplexity")
+ */
+class MessageController extends AbstractController
+{
+    use ActiveMemberTrait;
+    use ContactPanelTrait;
+    use RedirectBackTrait;
+    use TranslatedFlashTrait;
+    use TranslatorTrait;
+
+    public function __construct(
+        private readonly ConversationModel $conversationModel,
+        private readonly ConversationThread $conversationThread,
+        private readonly EntityManagerInterface $entityManager,
+        private readonly InboxFolders $inboxFolders,
+        private readonly MessageSender $messageSender,
+    ) {
+    }
+
+    /**
+     * @SuppressWarnings("PHPMD.NPathComplexity")
+     *
+     * \todo check how to get this reduced.
+     */
+    #[Route(path: '/new/message/{username:receiver}', name: 'message_new')]
+    public function newMessage(Request $request, Member $receiver, AllowContactCheck $allowContactCheck): Response
+    {
+        /** @var Member $sender */
+        $sender = $this->getUser();
+
+        if ($sender === $receiver) {
+            $this->addTranslatedFlash('notice', 'flash.message.self');
+
+            return $this->notAllowedInPanel($request, $receiver, 'message', $this->redirectToRoute('members_profile', ['username' => $sender->getUsername()]));
+        }
+
+        $refused = $this->refusedUntilActive($sender, 'flash.conversation.not.active', $this->redirectToRoute('members_profile', ['username' => $receiver->getUsername()]));
+        if ($refused) {
+            return $this->notAllowedInPanel($request, $receiver, 'message', $refused);
+        }
+
+        if (!$this->isGranted(MemberVoter::MEMBER_VIEW, $receiver)) {
+            $this->addTranslatedFlash('error', 'flash.member.invalid');
+
+            return $this->notAllowedInPanel($request, $receiver, 'message', $this->redirectToRoute('members_profile', ['username' => $sender->getUsername()]));
+        }
+
+        if (
+            $this->conversationModel->hasMessageLimitExceeded(
+                $sender,
+                $this->getParameter('new_members_messages_per_hour'),
+                $this->getParameter('new_members_messages_per_day')
+            )
+        ) {
+            $this->addTranslatedFlash('error', 'flash.message.limit');
+
+            return $this->notAllowedInPanel($request, $receiver, 'message', $this->redirectBack($request, 'members_profile', ['username' => $receiver->getUsername()]));
+        }
+
+        $redirectOnNotAllowed = false;
+        $hasAboutMe = $allowContactCheck->checkIfMemberHasAboutMe($sender);
+        $allowWithoutAboutMe = $allowContactCheck->getAllowRequestsWithoutAboutMe($receiver);
+        if (!$allowWithoutAboutMe && !$hasAboutMe) {
+            $redirectOnNotAllowed = true;
+            $this->addTranslatedFlash('notice', 'contact.not.without.about_me', [
+                'username' => $receiver->getUsername(),
+            ]);
+        }
+
+        $hasProfilePicture = $allowContactCheck->checkIfMemberHasProfilePicture($sender);
+        $allowWithoutProfilePicture = $allowContactCheck->getAllowRequestsWithoutProfilePicture($receiver);
+        if (!$allowWithoutProfilePicture && !$hasProfilePicture) {
+            $redirectOnNotAllowed = true;
+            $this->addTranslatedFlash('notice', 'contact.not.without.profile.picture', [
+                'username' => $receiver->getUsername(),
+            ]);
+        }
+
+        if ($redirectOnNotAllowed) {
+            return $this->notAllowedInPanel($request, $receiver, 'message', $this->redirectToRoute('members_profile', ['username' => $sender->getUsername()]));
+        }
+
+        $messageForm = $this->createForm(MessageToMemberType::class);
+        $messageForm->handleRequest($request);
+
+        if ($messageForm->isSubmitted() && $messageForm->isValid()) {
+            $subject = $messageForm->get('subject')->get('subject')->getData();
+            $body = $messageForm->get('message')->getData();
+
+            $message = $this->messageSender->send($sender, $receiver, null, $subject, $body);
+            // Sent from the search preview (in a frame): a short "sent" page instead of the profile.
+            if ($request->query->getBoolean('embed')) {
+                return $this->render('conversations/embed_sent.html.twig', [
+                    'kind' => 'message',
+                    'member' => $receiver,
+                    'conversation' => $message,
+                ]);
+            }
+
+            $this->addFlash('plausible_event', 'Message Sent');
+
+            return $this->redirectToRoute('members_profile', ['username' => $receiver->getUsername()]);
+        }
+
+        return $this->render('message/message.html.twig', [
+            'receiver' => $receiver,
+            'form' => $messageForm->createView(),
+        ] + $this->inboxFolders->getContext($request, $sender));
+    }
+
+    public function reply(Request $request, Message $message): Response
+    {
+        /** @var Member $sender */
+        $sender = $this->getUser();
+
+        $thread = $this->conversationThread->getThread($message);
+        if ($message !== $thread[0]) {
+            $message = $thread[\count($thread) - 1];
+        }
+
+        $receiver = ($message->getReceiver() === $sender) ? $message->getSender() : $message->getReceiver();
+
+        $replyMessage = new Message();
+        $replyMessage->setSubject($message->getSubject());
+
+        $replyForm = $this->createForm(MessageToMemberType::class, $replyMessage);
+        $replyForm->handleRequest($request);
+
+        if ($replyForm->isSubmitted() && $replyForm->isValid()) {
+            /** @var Message $data */
+            $data = $replyForm->getData();
+            $replySubject = $data->getSubject()->getSubject();
+            if (!str_starts_with($replySubject, 'Re:')) {
+                $replySubject = 'Re: ' . $replySubject;
+            }
+
+            $messageText = $data->getMessage();
+            $message = $this->messageSender->send($sender, $receiver, $message, $replySubject, $messageText);
+
+            return $this->redirectToRoute('conversation_view', ['id' => $message->getId()] + $request->query->all());
+        }
+
+        return $this->render('message/reply.html.twig', [
+            'form' => $replyForm->createView(),
+            'receiver' => $receiver,
+            'current' => $message,
+            'thread' => $thread,
+        ] + $this->inboxFolders->getContext($request, $sender));
+    }
+}

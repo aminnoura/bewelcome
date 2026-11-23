@@ -1,0 +1,32 @@
+<?php
+
+namespace App\Model\MemberDataExtractor;
+
+use App\Entity\Member;
+use Doctrine\Persistence\ManagerRegistry;
+use Symfony\WebpackEncoreBundle\Asset\EntrypointLookupInterface;
+use Twig\Environment;
+
+final class DoctrineExtractor extends AbstractExtractor implements ExtractorInterface
+{
+    public function __construct(
+        EntrypointLookupInterface $entrypointLookup,
+        Environment $environment,
+        ManagerRegistry $registry,
+        private readonly string $className,
+        private readonly string $memberRelationName,
+        private readonly string $alias,
+    ) {
+        parent::__construct($entrypointLookup, $environment, $registry);
+    }
+
+    public function extract(Member $member, string $tempDir): array
+    {
+        $repository = $this->getRepository($this->className);
+        $data = $repository->findBy([$this->memberRelationName => $member]);
+
+        $this->writePersonalDataFile([$this->alias => $data, 'member' => $member], $this->alias, $tempDir . $this->alias . '.html');
+
+        return [$this->alias => \count($data)];
+    }
+}

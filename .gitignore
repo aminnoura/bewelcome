@@ -1,0 +1,14 @@
+# OS & IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.log
+
+# Dependencies & Build artifacts
+node_modules/
+.expo/
+dist/
+web-build/
+.env.local
+.env.*.local

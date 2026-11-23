@@ -1,0 +1,8 @@
+{% extends 'emails/stay.template.html.twig' %}
+{# The guest declined an invitation, to the host: the stay struck through, the conversation to look at. #}
+{% set title_key = 'email.invitation.reply.guest' %}
+{% set kind = 'invitation.card.title'|trans %}
+{% set with_message = false %}
+{% set report = false %}
+{% set primary = { label: 'contact.sent.conversation'|trans, url: url('conversation_view', { id: message.id }) } %}
+{% set secondary = { label: 'message.profile'|trans({ username: sender.username }), url: url('members_profile', { username: sender.username }) } %}

@@ -1,0 +1,21 @@
+# Twig Configuration
+twig:
+    file_name_pattern: '*.twig'
+    debug:            "%kernel.debug%"
+    strict_variables: "%kernel.debug%"
+    form_themes:
+        - 'rox_form_theme.html.twig'
+        - 'ckeditor/ckeditor.html.twig'
+        - 'tomselect/tomselect.html.twig'
+
+    globals:
+        plausible_script_url: '%env(default::PLAUSIBLE_SCRIPT_URL)%'
+
+    paths:
+        '%kernel.project_dir%/public/images': 'images'
+        '%kernel.project_dir%/public': 'public'
+
+when@test:
+    twig:
+        strict_variables: true
+

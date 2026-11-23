@@ -1,0 +1,84 @@
+<?php
+
+namespace App\Form;
+
+use App\Entity\FeedbackCategory;
+use Gregwar\CaptchaBundle\Type\CaptchaType;
+use Override;
+use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\OptionsResolver\OptionsResolver;
+use Symfony\Component\Validator\Constraints\Email;
+use Symfony\Component\Validator\Constraints\NotBlank;
+use Symfony\Component\Validator\Constraints\NotNull;
+
+class FeedbackFormType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+            ->setMethod('POST')
+            ->add('IdCategory', ChoiceType::class, [
+                'label' => 'feedbackchooseyourcategory',
+                'placeholder' => 'feedbackchooseyourcategory',
+                'choices' => $options['categories'],
+                'choice_translation_domain' => 'messages',
+                'choice_value' => static function (?FeedbackCategory $entity) {
+                    return $entity ? $entity->getId() : '';
+                },
+                'choice_label' => static function (?FeedbackCategory $entity) {
+                    return $entity ? strtolower('FeedBackName_' . $entity->getName()) : '';
+                },
+                'required' => false,
+                'attr' => [
+                    'class' => 'o-input',
+                ],
+                'constraints' => [
+                    new NotNull(message: 'feedback.select.category'),
+                ],
+            ])
+            ->add('FeedbackQuestion', CkEditorType::class, [
+                'label' => 'feedbackenteryourquestion',
+                'required' => false,
+                'constraints' => [
+                    new NotBlank(message: 'feedback.message.empty'),
+                ],
+            ])
+        ;
+        // members find their address filled in (FeedbackController), visitors prove they are human
+        $builder->add('FeedbackEmail', TextType::class, [
+            'label' => 'feedbackemail',
+            'required' => false,
+            'attr' => ['class' => 'o-input', 'autocomplete' => 'email'],
+            'constraints' => [
+                new Email(),
+            ],
+        ]);
+        if (null === $options['member']) {
+            $builder->add('captcha', CaptchaType::class);
+        }
+        $builder
+            ->add('no_reply_needed', CheckboxType::class, [
+                'label' => 'feedbackidonotwantananswer',
+                'required' => false,
+            ])
+        ;
+    }
+
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults([
+            'categories' => [],
+            'member' => null,
+        ]);
+    }
+
+    #[Override]
+    public function getBlockPrefix(): string
+    {
+        return '';
+    }
+}

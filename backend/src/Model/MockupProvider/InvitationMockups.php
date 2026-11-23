@@ -1,0 +1,248 @@
+<?php
+
+namespace App\Model\MockupProvider;
+
+use App\Entity\HostingRequest;
+use App\Entity\Member;
+use App\Form\InvitationGuest;
+use App\Form\InvitationHost;
+use App\Form\InvitationType;
+use App\Form\ReportSpamType;
+use App\Service\InboxFolders;
+use Symfony\Component\Form\FormFactoryInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
+
+class InvitationMockups implements MockupProviderInterface
+{
+    private const array MOCKUPS = [
+        'invitation (mail)' => [
+            'type' => 'email',
+            'template' => 'emails/invitation.html.twig',
+            'description' => 'Mail to the guest about an invitation to stay.',
+        ],
+        'invitation reply from guest (mail)' => [
+            'type' => 'email',
+            'with_parameters' => true,
+            'template' => 'emails/invitation_reply_from_guest.html.twig',
+            'description' => 'Mail to the host when the guest answered the invitation.',
+        ],
+        'invitation reply from host (mail)' => [
+            'type' => 'email',
+            'with_parameters' => true,
+            'template' => 'emails/invitation_reply_from_host.html.twig',
+            'description' => 'Mail to the guest when the host wrote about the invitation.',
+        ],
+        'invitation decline from guest (mail)' => [
+            'type' => 'email',
+            'template' => 'emails/invitation_decline_from_guest.html.twig',
+            'description' => 'Mail to the host when the guest declined the invitation.',
+        ],
+        'intial invitation (host)' => [
+            'type' => 'page',
+            'template' => 'invitation/invite.html.twig',
+        ],
+        'invitation reply (guest)' => [
+            'type' => 'page',
+            'with_parameters' => true,
+            'url' => '/conversation/{id}/reply',
+            'template' => 'invitation/reply_from_guest.html.twig',
+            'parameters' => [
+                'class' => self::class,
+                'function' => 'getMockupParameters',
+            ],
+        ],
+        'invitation reply (host)' => [
+            'type' => 'page',
+            'with_parameters' => true,
+            'url' => '/conversation/{id}/reply',
+            'template' => 'invitation/reply_from_host.html.twig',
+            'parameters' => [
+                'getStatus' => [
+                    'open' => HostingRequest::REQUEST_OPEN,
+                    'cancelled' => HostingRequest::REQUEST_CANCELLED,
+                    'declined' => HostingRequest::REQUEST_DECLINED,
+                    'tentatively' => HostingRequest::REQUEST_TENTATIVELY_ACCEPTED,
+                    'accepted' => HostingRequest::REQUEST_ACCEPTED,
+                ],
+            ],
+        ],
+        'view invitation (guest)' => [
+            'type' => 'page',
+            'with_parameters' => true,
+            'url' => '/conversation/{id}',
+            'template' => 'invitation/view.html.twig',
+            'parameters' => [
+                'class' => self::class,
+                'function' => 'getMockupParameters',
+            ],
+        ],
+        'view invitation (host)' => [
+            'type' => 'page',
+            'with_parameters' => true,
+            'url' => '/conversation/{id}',
+            'template' => 'invitation/view.html.twig',
+            'parameters' => [
+                'class' => self::class,
+                'function' => 'getMockupParameters',
+            ],
+        ],
+    ];
+    private readonly InvitationUtility $invitationUtility;
+
+    public function __construct(
+        private readonly FormFactoryInterface $formFactory,
+        private readonly InboxFolders $inboxFolders,
+        private readonly RequestStack $requestStack,
+    ) {
+        $this->invitationUtility = new InvitationUtility();
+    }
+
+    public function getFeature(): string
+    {
+        return 'invitations';
+    }
+
+    public function getMockups(): array
+    {
+        return self::MOCKUPS;
+    }
+
+    /**
+     * @SuppressWarnings("PHPMD")
+     */
+    public function getMockupParameter(?string $locale = null, ?string $feature = null): array
+    {
+        return [
+            'status' => [
+                'open' => HostingRequest::REQUEST_OPEN,
+                'cancelled' => HostingRequest::REQUEST_CANCELLED,
+                'declined' => HostingRequest::REQUEST_DECLINED,
+                'tentatively' => HostingRequest::REQUEST_TENTATIVELY_ACCEPTED,
+                'accepted' => HostingRequest::REQUEST_ACCEPTED,
+            ],
+        ];
+    }
+
+    public function getMockupVariables(array $parameters): array
+    {
+        return match ($parameters['name']) {
+            'invitation (mail)' => $this->getVariablesForInvitationMail($parameters, fromHost: true),
+            'invitation reply from guest (mail)' => $this->getVariablesForInvitationMail($parameters),
+            'invitation reply from host (mail)' => $this->getVariablesForInvitationMail($parameters, fromHost: true),
+            'invitation decline from guest (mail)' => $this->getVariablesForInvitationMail(
+                ['status' => HostingRequest::REQUEST_DECLINED] + $parameters,
+            ),
+            'intial invitation (host)' => $this->getVariablesForInitialInvitation($parameters),
+            'invitation reply (guest)' => $this->getVariablesForReplyGuest($parameters),
+            'invitation reply (host)' => $this->getVariablesForReplyHost($parameters),
+            'view invitation (guest)' => $this->getVariablesForViewGuest($parameters),
+            'view invitation (host)' => $this->getVariablesForViewHost($parameters),
+            default => [],
+        };
+    }
+
+    /**
+     * The mails about an invitation: the host (bwadmin) invites the guest (the translator), or the guest answers.
+     */
+    private function getVariablesForInvitationMail(array $parameters, bool $fromHost = false): array
+    {
+        $host = $parameters['admin'];
+        $guest = $parameters['user'];
+        $leg = $this->invitationUtility->getLeg($host);
+        $status = (int) ($parameters['status'] ?? HostingRequest::REQUEST_OPEN);
+        // the newest first: the invitation is from the host, the reply from the guest
+        [$reply, $invitation] = $this->invitationUtility->getThread($host, $guest, $leg, $status, 1);
+        $message = $fromHost ? $invitation : $reply;
+
+        return [
+            'sender' => $fromHost ? $host : $guest,
+            'receiver' => $fromHost ? $guest : $host,
+            'message' => $message,
+            'request' => $message->getRequest(),
+            'changed' => false,
+            'subject' => 'Subject',
+        ];
+    }
+
+    private function getVariablesForInitialInvitation(array $parameters): array
+    {
+        $host = $parameters['user'];
+        $form = $this->formFactory->create(InvitationType::class);
+
+        $leg = $this->invitationUtility->getLeg($host);
+
+        return [
+            'leg' => $leg,
+            'form' => $form->createView(),
+        ];
+    }
+
+    private function getVariablesForReplyGuest(array $parameters): array
+    {
+        $host = $parameters['user'];
+        $guest = $parameters['admin'];
+
+        $leg = $this->invitationUtility->getLeg($host);
+        $thread = $this->invitationUtility->getThread($host, $guest, $leg, $parameters['status'], 4);
+
+        $form = $this->formFactory->create(InvitationGuest::class, $thread[4]);
+
+        return [
+            'leg' => $leg,
+            'host' => $host,
+            'guest' => $guest,
+            'thread' => $thread,
+            'form' => $form->createView(),
+        ];
+    }
+
+    private function getVariablesForReplyHost(array $parameters): array
+    {
+        $host = $parameters['user'];
+        $guest = $parameters['admin'];
+
+        $leg = $this->invitationUtility->getLeg($host);
+        $thread = $this->invitationUtility->getThread($host, $guest, $leg, $parameters['status'], 4);
+
+        $form = $this->formFactory->create(InvitationHost::class, $thread[4]);
+
+        return [
+            'leg' => $leg,
+            'host' => $host,
+            'guest' => $guest,
+            'thread' => $thread,
+            'invitation' => $thread[0],
+            'form' => $form->createView(),
+        ];
+    }
+
+    private function getVariablesForViewGuest(array $parameters): array
+    {
+        return $this->getVariablesForView($parameters, $parameters['admin'], $parameters['user']);
+    }
+
+    private function getVariablesForViewHost(array $parameters): array
+    {
+        return $this->getVariablesForView($parameters, $parameters['user'], $parameters['admin']);
+    }
+
+    /**
+     * The invitation as one of its two members sees it in the inbox (the member is $parameters['user']).
+     */
+    private function getVariablesForView(array $parameters, Member $host, Member $guest): array
+    {
+        $leg = $this->invitationUtility->getLeg($host);
+        $thread = $this->invitationUtility->getThread($host, $guest, $leg, $parameters['status'], 4);
+        $form = $this->formFactory->create(ReportSpamType::class);
+
+        return [
+            'leg' => $leg,
+            'host' => $host,
+            'guest' => $guest,
+            'thread' => $thread,
+            'form' => $form->createView(),
+            'is_spam' => false,
+            'show_deleted' => false,
+        ] + $this->inboxFolders->getContext($this->requestStack->getCurrentRequest(), $parameters['user'], 'invitations');
+    }
+}

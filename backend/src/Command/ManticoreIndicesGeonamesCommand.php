@@ -1,0 +1,354 @@
+<?php
+
+namespace App\Command;
+
+use App\Entity\Location;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\NativeQuery;
+use Doctrine\ORM\Query\ResultSetMapping;
+use Exception;
+use Manticoresearch\Client;
+use Manticoresearch\Table;
+use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Helper\ProgressBar;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
+
+#[AsCommand(
+    name: 'manticore:indices:geonames',
+    description: 'Creates the manticore indices for the location search',
+    aliases: [],
+    hidden: false,
+)]
+class ManticoreIndicesGeonamesCommand extends Command
+{
+    private const string GEONAMES_INDEX = 'geonames_rt';
+    private int $chunkSize = 250000;
+    private SymfonyStyle $io;
+
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        private readonly string $manticoreHost,
+        private readonly int $manticorePort,
+    ) {
+        parent::__construct();
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        // the rebuild needs more than the container's 512 MB
+        ini_set('memory_limit', '-1');
+
+        $this->io = new SymfonyStyle($input, $output);
+        $this->io->note('Creating manticore geonames real-time index.');
+        $this->io->newLine();
+
+        $index = $this->createGeonamesIndex();
+        if (null === $index) {
+            return Command::FAILURE;
+        }
+
+        $this->addGeonamesDocuments($index, $output);
+
+        $this->optimizeGeonamesIndex();
+
+        $this->addAlternateNamesDocuments($index, $output);
+
+        $this->io->newLine();
+        $this->io->note('Created ' . self::GEONAMES_INDEX . '.');
+
+        $this->io->success('Created Manticore index.');
+
+        return Command::SUCCESS;
+    }
+
+    private function createGeonamesIndex(): ?Table
+    {
+        $client = new Client(['host' => $this->manticoreHost, 'port' => $this->manticorePort]);
+        $index = $client->table(self::GEONAMES_INDEX);
+
+        try {
+            // Rebuild from scratch: an existing index would otherwise get every location a second time
+            $existing = $client->sql("SHOW TABLES LIKE '" . self::GEONAMES_INDEX . "'", true);
+            if (!empty($existing)) {
+                $index->drop();
+                $this->io->note('Dropped existing ' . self::GEONAMES_INDEX . ' index.');
+            }
+
+            $index->create(
+                [
+                    'geoname_id' => ['type' => 'integer'],
+                    'name' => ['type' => 'text'],
+                    'isPlace' => ['type' => 'bool'],
+                    'isAdmin' => ['type' => 'bool'],
+                    'isCountry' => ['type' => 'bool'],
+                    'locale' => ['type' => 'string'],
+                    'admin1' => ['type' => 'string'],
+                    'admin2' => ['type' => 'string'],
+                    'admin3' => ['type' => 'string'],
+                    'admin4' => ['type' => 'string'],
+                    'country' => ['type' => 'string'],
+                    'population' => ['type' => 'integer'],
+                    'member_count' => ['type' => 'integer'],
+                ],
+                [
+                    'index_exact_words' => '1',
+                    'expand_keywords' => '0', // don't support wildcards upfront only in searches
+                    'charset_table' => 'non_cjk,U+0020->_', // Ignore spaces (turns e.g. Los Angeles into Los_Angeles)
+                    'min_prefix_len' => '1',
+                    'prefix_fields' => 'name',
+                    'ngram_chars' => 'cjk',
+                    'ngram_len' => '1',
+                ]
+            );
+        } catch (Exception $e) {
+            $this->io->error('Could not create index ' . self::GEONAMES_INDEX . ': ' . $e->getMessage());
+
+            return null;
+        }
+
+        return $index;
+    }
+
+    /**
+     * Merges the disk chunks of the places into one before the translations are added: otherwise Manticore's
+     * auto-optimize starts in the middle of adding them, and Manticore closes the connection.
+     */
+    private function optimizeGeonamesIndex(): void
+    {
+        $this->io->note('Optimizing ' . self::GEONAMES_INDEX . ' (merging disk chunks before adding the translations).');
+        $client = new Client(['host' => $this->manticoreHost, 'port' => $this->manticorePort]);
+        try {
+            // raw: the /sql endpoint only takes DDL raw; the client can't parse OPTIMIZE's empty answer
+            $client->sql('OPTIMIZE TABLE ' . self::GEONAMES_INDEX . ' OPTION cutoff=1, sync=1', true);
+        } catch (Exception $exception) {
+            if ('' !== $exception->getMessage()) {
+                throw $exception;
+            }
+        }
+        $this->io->note('Optimized.');
+    }
+
+    private function addGeonamesDocuments(Table $index, OutputInterface $output): void
+    {
+        $this->io->note('Adding documents to geonames_rt from location table.');
+        $this->io->newLine();
+
+        $stmt = $this->entityManager
+            ->getConnection()
+            ->executeQuery(<<<'___SQL'
+                    SELECT
+                        count(*) as cnt
+                    FROM
+                        location g
+                ___SQL);
+
+        $count = $stmt->fetchNumeric()[0];
+        if (0 !== $count) {
+            $progressBar = $this->getProgressBar($output, $count);
+
+            $firstResult = 0;
+            do {
+                $query = $this->entityManager->createNativeQuery(<<<___SQL
+                        SELECT
+                            g.geoname_id,
+                            g.`name` AS name,
+                            g.feature_class,
+                            g.feature_code,
+                            g.country_id,
+                            g.admin_1_id,
+                            g.admin_2_id,
+                            g.admin_3_id,
+                            g.admin_4_id,
+                            '_geo' AS locale,
+                            g.population,
+                            IFNULL(membercounts.total, 0) AS member_count
+                        FROM
+                            location g
+                        LEFT JOIN (
+                            SELECT
+                                a.location,
+                                COUNT(a.location) total
+                            FROM
+                                member m,
+                                address a
+                            WHERE m.status IN ('Active', 'OutOfRemind') and m.id = a.member_id
+                            GROUP BY
+                                a.location
+                        ) membercounts
+                        ON (g.geoname_id = membercounts.location)
+                        LIMIT {$firstResult}, {$this->chunkSize}
+                    ___SQL, $this->getResultSetMappingForGeonamesIndex());
+
+                $addDocumentsCount = $this->addGeonamesDocumentsToIndex($index, $query, $progressBar);
+
+                $firstResult += $this->chunkSize;
+            } while ($addDocumentsCount > 0);
+
+            $progressBar->finish();
+            $this->io->newLine();
+        }
+    }
+
+    private function addAlternateNamesDocuments(Table $index, OutputInterface $output): void
+    {
+        $this->io->note('Adding documents to geonames_rt from location_translation table.');
+        $this->io->newLine();
+
+        $stmt = $this->entityManager
+            ->getConnection()
+            ->executeQuery(<<<'___SQL'
+                    SELECT
+                        count(*) as cnt
+                    FROM
+                        location_translation gt
+                ___SQL);
+
+        $count = $stmt->fetchNumeric()[0];
+        if (0 !== $count) {
+            $progressBar = $this->getProgressBar($output, $count);
+            $progressBar->start();
+
+            $firstResult = 0;
+            do {
+                $query = $this->entityManager->createNativeQuery(<<<___SQL
+                        SELECT
+                            g.geoname_id,
+                            gt.`content` AS name,
+                            g.feature_class,
+                            g.feature_code,
+                            g.country_id,
+                            g.admin_1_id,
+                            g.admin_2_id,
+                            g.admin_3_id,
+                            g.admin_4_id,
+                            gt.`locale` AS locale,
+                            g.population,
+                            IFNULL(membercounts.total, 0) AS member_count
+                        FROM
+                            location g
+                        JOIN
+                            location_translation gt ON g.geoname_id = gt.object_id
+                        LEFT JOIN (
+                            SELECT
+                                a.location,
+                                COUNT(a.location) total
+                            FROM
+                                member m,
+                                address a
+                            WHERE m.status IN ('Active', 'OutOfRemind') and m.id = a.member_id
+                            GROUP BY
+                                a.location
+                        ) membercounts
+                        ON (g.geoname_id = membercounts.location)
+                        LIMIT {$firstResult}, {$this->chunkSize}
+                    ___SQL, $this->getResultSetMappingForGeonamesIndex());
+
+                $addDocumentsCount = $this->addGeonamesDocumentsToIndex($index, $query, $progressBar);
+
+                $firstResult += $this->chunkSize;
+            } while ($addDocumentsCount > 0);
+
+            $progressBar->finish();
+            $this->io->newLine();
+        }
+    }
+
+    /**
+     * @SuppressWarnings("PHPMD.CyclomaticComplexity")
+     *
+     * Complexity is due to handling of Geonames (different feature codes) not because code is difficult to understand.
+     */
+    private function addGeonamesDocumentsToIndex(Table $index, NativeQuery $query, ProgressBar $progress): int
+    {
+        $locations = $query->getResult();
+        $documents = [];
+
+        /** @var Location $location */
+        foreach ($locations as $location) {
+            $isPlace = 'P' === $location['feature_class'] && str_starts_with((string) $location['feature_code'], 'PPL')
+                && 'PPLH' !== $location['feature_code'] && 'PPLCH' !== $location['feature_code']
+                && 'PPLX' !== $location['feature_code'] && 'PPLQ' !== $location['feature_code'];
+            $isCountry =
+                ('A' === $location['feature_class'] && str_starts_with((string) $location['feature_code'], 'PCL')
+                    && 'PRSH' !== $location['feature_code'] && 'PCLH' !== $location['feature_code'])
+                || ('TERR' === $location['feature_code']);
+            $isAdmin = 'A' === $location['feature_class'] && !$isCountry;
+
+            $documents[] = [
+                'geoname_id' => $location['geoname_id'],
+                'name' => $location['name'],
+                'country' => $location['country'] ?? 0,
+                'isPlace' => $isPlace,
+                'isAdmin' => $isAdmin,
+                'isCountry' => $isCountry,
+                'locale' => $this->adaptLocale($location['locale']),
+                'admin1' => $location['admin1'] ?? 0,
+                'admin2' => $location['admin2'] ?? 0,
+                'admin3' => $location['admin3'] ?? 0,
+                'admin4' => $location['admin4'] ?? 0,
+                'population' => $location['population'] ?? 0,
+                'member_count' => $location['member_count'],
+            ];
+            $progress->advance();
+        }
+        $count = \count($locations);
+        unset($locations);
+
+        if (0 !== $count) {
+            $index->addDocuments($documents);
+            $index->flush();
+        }
+
+        gc_collect_cycles();
+
+        return $count;
+    }
+
+    private function getResultSetMappingForGeonamesIndex(): ResultSetMapping
+    {
+        $rsm = new ResultSetMapping();
+        $rsm
+            ->addScalarResult('geoname_id', 'geoname_id')
+            ->addScalarResult('name', 'name')
+            ->addScalarResult('country_id', 'country')
+            ->addScalarResult('admin_1_id', 'admin1')
+            ->addScalarResult('admin_2_id', 'admin2')
+            ->addScalarResult('admin_3_id', 'admin3')
+            ->addScalarResult('admin_4_id', 'admin4')
+            ->addScalarResult('feature_class', 'feature_class')
+            ->addScalarResult('feature_code', 'feature_code')
+            ->addScalarResult('locale', 'locale')
+            ->addScalarResult('population', 'population')
+            ->addScalarResult('member_count', 'member_count')
+        ;
+
+        return $rsm;
+    }
+
+    private function getProgressBar(OutputInterface $output, $count): ProgressBar
+    {
+        $progressBar = new ProgressBar($output, $count);
+        $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %elapsed:6s%/%estimated:-6s%');
+        $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %elapsed:6s%/%estimated:-6s%');
+        $progressBar->start();
+        $progressBar->setRedrawFrequency(1000);
+        $progressBar->minSecondsBetweenRedraws(5);
+
+        return $progressBar;
+    }
+
+    private function adaptLocale(string $locale): string
+    {
+        $locale = match ($locale) {
+            'zh-TW' => 'zh-hant',
+            'zh-CN' => 'zh-hans',
+            'pt-BR' => 'pt-br',
+            default => $locale,
+        };
+
+        return $locale;
+    }
+}

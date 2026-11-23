@@ -1,0 +1,74 @@
+<?xml version="1.0"?>
+<ruleset name="Rox PHPMD ruleset"
+         xmlns="http://pmd.sf.net/ruleset/1.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sf.net/ruleset/1.0.0
+                     http://pmd.sf.net/ruleset_xml_schema.xsd"
+         xsi:noNamespaceSchemaLocation="
+                     http://pmd.sf.net/ruleset_xml_schema.xsd">
+
+    <rule ref="rulesets/cleancode.xml">
+        <exclude name="StaticAccess" />
+        <exclude name="ElseExpression" />
+    </rule>
+
+    <rule name="StaticAccess"
+          since="1.4.0"
+          message="Avoid using static access to class '{0}' in method '{1}'."
+          class="PHPMD\Rule\CleanCode\StaticAccess"
+          externalInfoUrl="http://phpmd.org/rules/cleancode.html#staticaccess">
+        <priority>3</priority>
+        <properties>
+            <property name="exceptions" value="
+                \DateTime,
+                \Faker\Factory,
+                \Carbon\Carbon,
+                \Symfony\Component\Debug\Debug,
+                Doctrine\Common\Collections\Criteria,
+                \AnthonyMartin\GeoLocation\GeoLocation,
+                \Symfony\Component\HttpFoundation\File\UploadedFile,
+                \Mockery
+            " />
+        </properties>
+    </rule>
+
+    <rule ref="rulesets/codesize.xml" />
+
+    <rule ref="rulesets/controversial.xml" />
+
+    <rule ref="rulesets/design.xml">
+        <exclude name="CouplingBetweenObjects"/>
+    </rule>
+
+    <rule ref="rulesets/naming.xml">
+        <exclude name="ShortVariable"/>
+        <exclude name="LongVariable" />
+    </rule>
+
+    <rule ref="rulesets/naming.xml/ShortVariable"
+          since="0.2"
+          message="Avoid variables with short names like {0}. Configured minimum length is {1}."
+          class="PHPMD\Rule\Naming\ShortVariable"
+          externalInfoUrl="http://phpmd.org/rules/naming.html#shortvariable">
+        <priority>3</priority>
+        <properties>
+            <property name="minimum" description="Minimum length for a variable, property or parameter name" value="3"/>
+            <property name="exceptions" value="a,b,id,i,e,q,qb,dt,em,io" />
+        </properties>
+    </rule>
+
+    <rule ref="rulesets/design.xml/CouplingBetweenObjects"
+          since="1.1.0"
+          message="The class {0} has a coupling between objects value of {1}. Consider to reduce the number of dependencies under {2}."
+          class="PHPMD\Rule\Design\CouplingBetweenObjects"
+          externalInfoUrl="http://phpmd.org/rules/design.html#couplingbetweenobjects">
+        <priority>2</priority>
+        <properties>
+            <property name="maximum" value="20" description="Maximum number of acceptable dependencies." />
+        </properties>
+    </rule>
+
+
+    <rule ref="rulesets/unusedcode.xml" />
+
+</ruleset>

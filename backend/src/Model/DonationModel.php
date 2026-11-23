@@ -1,0 +1,57 @@
+<?php
+
+namespace App\Model;
+
+use App\Entity\Donation;
+use App\Entity\Location;
+use App\Entity\Member;
+use App\Repository\LocationRepository;
+use Doctrine\ORM\EntityManagerInterface;
+
+readonly class DonationModel
+{
+    public function __construct(
+        private EntityManagerInterface $entityManager,
+    ) {
+    }
+
+    public function processDonation(?Member $member, array $parameters): bool
+    {
+        $member = 0 !== $member ? $member : null;
+
+        $donation = new Donation();
+        $donation->setAmount((string) ($parameters['amt'] ?? 0));
+        $donation->setMoney((string) ($parameters['cc'] ?? 'EUR'));
+        $donation->setMemberComment((string) ($parameters['cm'] ?? ''));
+        $donation->setDonor($member);
+
+        if (null === $member) {
+            $donation->setNameGiven('paypal');
+        } else {
+            $donation->setEmail((string) $member->getEmail());
+            $donation->setNameGiven($member->getUsername());
+
+            /** @var LocationRepository $locationRepository */
+            $locationRepository = $this->entityManager->getRepository(Location::class);
+            /** @var ?Location $country */
+            $country = $locationRepository->findCountry($member->getActiveAddress()->getCountry()->getCountryId());
+
+            if (null !== $country) {
+                $donation->setCountry($country);
+            }
+        }
+        $donation->setSystemComment('paypal');
+        $donation->setReferencePaypal((string) ($parameters['tx'] ?? 'No transaction provided'));
+        $donation->setStatusPrivate('showamountonly');
+
+        $this->entityManager->persist($donation);
+        $this->entityManager->flush();
+
+        return true;
+    }
+
+    public function getListOfDonations(): array
+    {
+        return [];
+    }
+}

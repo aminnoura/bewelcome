@@ -1,0 +1,40 @@
+<?php
+
+namespace App\Form;
+
+use Override;
+use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\FormBuilderInterface;
+
+class TripRadiusType extends AbstractType
+{
+    /**
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
+     */
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+            ->add('radius', Select2Type::class, [
+                'label' => 'trips.radius',
+                'required' => false,
+                'choices' => [
+                    'trips.legs.exact' => 0,
+                    'search.radius.5km' => 5,
+                    'search.radius.10km' => 10,
+                    'search.radius.20km' => 20,
+                    'search.radius.50km' => 50,
+                    'search.radius.100km' => 100,
+                ],
+                'attr' => [
+                    'id' => 'trips_radius',
+                ],
+            ])
+        ;
+    }
+
+    #[Override]
+    public function getBlockPrefix(): string
+    {
+        return 'trips';
+    }
+}

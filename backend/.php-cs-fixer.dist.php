@@ -1,0 +1,69 @@
+<?php
+
+$finder = new PhpCsFixer\Finder()
+    ->in(['src/', 'tests/'])
+    ->exclude('var')
+    ->notPath([
+        'config/bundles.php',
+        'config/reference.php',
+    ])
+    ->notName('*.twig')
+    ->notName('*.yml')
+;
+
+return new PhpCsFixer\Config()
+    ->setParallelConfig(new PhpCsFixer\Runner\Parallel\ParallelConfig(4, 20))
+    ->setRiskyAllowed(true)
+    ->setRules([
+        '@PHP8x3Migration' => true,
+        '@PHP8x4Migration' => true,
+        '@PHP8x5Migration' => true,
+        '@Symfony' => true,
+        '@Symfony:risky' => true,
+        'array_syntax' => ['syntax' => 'short'],
+        'combine_consecutive_unsets' => true,
+        // one should use PHPUnit methods to set up expected exception instead of annotations
+        'general_phpdoc_annotation_remove' => [
+            'annotations' => [
+                'expectedException',
+                'expectedExceptionMessage',
+                'expectedExceptionMessageRegExp',
+            ]
+        ],
+        'global_namespace_import' => [
+            'import_classes' => true,
+        ],
+        'heredoc_to_nowdoc' => true,
+        'no_extra_blank_lines' => [
+            'tokens' => [
+                'break',
+                'continue',
+                'extra',
+                'return',
+                'throw',
+                'use',
+                'parenthesis_brace_block',
+                'square_brace_block',
+                'curly_brace_block',
+            ],
+        ],
+        'no_unreachable_default_argument_value' => true,
+        'no_useless_else' => true,
+        'no_useless_return' => true,
+        'ordered_class_elements' => true,
+        'ordered_imports' => true,
+//        'php_unit_strict' => true,
+//      Disabled as some tests fail after moving AssertEquals to AssertSame
+//      \todo enable again after determining why that assert fails.
+        'phpdoc_add_missing_param_annotation' => true,
+        'phpdoc_order' => true,
+        // @Symfony wants the first paragraph of a docblock to end in a full stop, question or exclamation mark, and
+        // has no option for it: after a sentence in brackets it asks for ".)."
+        'phpdoc_summary' => false,
+        'semicolon_after_instruction' => true,
+        'strict_comparison' => true,
+        'strict_param' => true,
+        'concat_space' => ['spacing' => 'one'],
+    ])
+    ->setFinder($finder)
+;

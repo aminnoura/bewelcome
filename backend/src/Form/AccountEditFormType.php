@@ -1,0 +1,87 @@
+<?php
+
+namespace App\Form;
+
+use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\DateType;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\Validator\Constraints\GreaterThan;
+use Symfony\Component\Validator\Constraints\LessThan;
+use Symfony\Component\Validator\Constraints\NotBlank;
+use Symfony\Component\Validator\Constraints\NotNull;
+
+class AccountEditFormType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+            ->add('name', TextType::class, [
+                'label' => 'label.name',
+                'attr' => [
+                    'class' => 'o-input',
+                    'placeholder' => 'placeholder.name',
+                ],
+                'help' => 'help.name',
+                'required' => false,
+                'constraints' => [
+                    new NotBlank(message: 'error.name'),
+                ],
+            ])
+            ->add('show_name', CheckboxType::class, [
+                'label' => 'label.show.name',
+                'required' => false,
+            ])
+            ->add('short_name', TextType::class, [
+                'label' => 'label.shortname',
+                'attr' => [
+                    'class' => 'o-input',
+                    'placeholder' => 'placeholder.shortname',
+                ],
+                'help' => 'help.shortname',
+                'required' => false,
+            ])
+            ->add('birthdate', DateType::class, [
+                'label' => 'label.birthdate',
+                'attr' => [
+                    'placeholder' => 'placeholder.birthdate',
+                    'class' => 'js-datepicker o-input',
+                ],
+                'help' => 'help.birthdate',
+                'widget' => 'single_text',
+                'html5' => false,
+                'required' => false,
+                'constraints' => [
+                    new NotBlank(message: 'error.birthdate'),
+                    new LessThan('-18years'),
+                    new GreaterThan('-120years'),
+                ],
+            ])
+            ->add('show_age', CheckboxType::class, [
+                'label' => 'label.show.age',
+                'required' => false,
+            ])
+            ->add('gender', ChoiceType::class, [
+                'label' => 'label.gender',
+                'expanded' => true,
+                'multiple' => false,
+                'help' => 'help.gender',
+                'choices' => [
+                    'male' => 'male',
+                    'female' => 'female',
+                    'other' => 'other',
+                ],
+                'required' => true,
+                'constraints' => [
+                    new NotNull(message: 'error.gender'),
+                ],
+            ])
+            ->add('show_gender', CheckboxType::class, [
+                'label' => 'label.show.gender',
+                'required' => false,
+            ])
+        ;
+    }
+}

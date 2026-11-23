@@ -1,0 +1,334 @@
+trip.flash.expired:
+    - All the legs of this trip are in the past. Editing the trip is no longer possible.
+    - Shown as flash the trip the user tried to edit was expired
+trip.summary:
+    - Summary
+    - Label for the trip's title/summary
+trip.description:
+    - Description
+    - Label for the trip's description
+dashboard.load.conversations:
+    - Please wait while the conversations are loaded.
+    - Text shown while the conversations are downloaded
+landing.conversations:
+    - Conversations
+    - Label for conversations
+landing.bevisited.title:
+    - Be Visited
+    - Header for the trips section on the landing page
+landing.bevisited.subtitle:
+    - Invite visitors to your area
+    - Subheading  for the trips section on the landing page
+bevisited.load.legs:
+    - Please wait while we load the members wanting to visit your area
+    - Text shown while the possible visitors to the area are loaded (on landing)
+landing.bevisited.alltrips:
+    - Show all visitors
+    - Button label on landing. Links to all trips in the area.
+landing.bevisited.none:
+    - No visitors in the next three months.
+    - Text shown when no visitors to the area are found
+conversations:
+    - Conversations
+    - Header on the conversations page
+conversations.unread:
+    - Unread
+    - Button label
+trip.in.area:
+    - Visitors
+trip.in.area.no:
+    - No one's planning to visit your area.
+trip.create:
+    - Create
+trip.edit:
+    - Edit
+trip.leg.location:
+    - Location
+trip.leg.duration:
+    - Duration
+trip.count.of.travellers:
+    - '{countOfTravellers, plural, one {# traveler} other {# travelers}}'
+trip.additional.info:
+    - Additional information
+trip.legs:
+    - Legs
+trip.no.trips:
+    - No trips to be displayed.
+trip:
+    - Trip
+trip.invitation.radius:
+    - Invitation radius
+trip.option.private:
+    - This leg is private (hidden from other members)
+trip.option.meet.locals:
+    - Meet locals
+trip.option.looking.for.host:
+    - Looking for a host
+trip.option.not.looking.for.host:
+    - Looking for a host
+trip.additional.info.none:
+    - 'No additional info'
+    - Item in the dropdown for additional info for the trip
+trip.additional.info.couple:
+    - 'Travelling as a couple'
+    - Item in the dropdown for additional info for the trip
+trip.additional.info.friends_mixed:
+    - 'Friends travelling (several genders)'
+    - Item in the dropdown for additional info for the trip
+trip.additional.info.friends_same:
+    - 'Friends travelling (same gender)'
+    - Item in the dropdown for additional info for the trip
+trip.additional.info.family:
+    - 'Travelling family'
+    - Item in the dropdown for additional info for the trip
+trip.summary.placeholder:
+    - 'Provide a summary for your trip.'
+    - Placeholder shown as long as no text is entered in the trip summary field
+trip.description.placeholder:
+    - Describe your trip so that other have an idea why you're travelling.
+    - Placeholder shown as long as no text is entered in the trip description field
+trip.travellers:
+    - '# travellers'
+    - Label for the number of travellers dropdown
+trips.mytrips:
+    - 'My trips'
+    - Item in the large menu (reused in the submenu of the trips module)
+Location:
+    - 'Location'
+    - Label for the field that gets the leg's location
+Duration:
+    - 'Duration'
+    - Label for the field that gets the leg's duration
+Create:
+    - 'Create (1)'
+    - Label for the create button on the trip creation page
+location.none.given:
+    - 'You need to select a location'
+    - Error text shown if no location was selected
+    - validators
+duration.select:
+    - 'You need to select a duration from the calendar'
+    - Error message shown when the duration field is empty
+    - validators
+trips.visitors:
+    - Visitors
+    - Menu item in the large menu (pointing to visitors to my area)
+trip.copy:
+    - 'Copy'
+    - Tool tip/aria label for the icon to copy a trip.
+trip.leg.warning.too.many.travellers:
+    - 'There are more travellers in this group than you prefer to host.'
+    - Tool tip/aria label shown for the exclamation mark if the maxguest set by a member is lower than the number of travellers of a trip shown on the visitors page
+trip.location.none:
+    - 'No location'
+    - Used for extracted trips that do not have a location set for a leg.
+trip.show:
+    - 'Show'
+    - Tool tip/aria label for the icon to show a trip.
+trip.hide:
+    - 'Hide this trip'
+    - Tool tip/aria label for the button that hides a trip from the visitors list.
+trip.notification.new.subject:
+    - '{username} added a trip in your area.'
+    - Email subject for trip notifications.
+trip.notification.new.email:
+    - '{username} added a trip in your area.'
+    - Email body for trip notifications.
+trip.notification.digest.subject.daily:
+    - '{count, plural, one {Daily summary: a new trip in your area} other {Daily summary: # new trips in your area}}'
+    - Email subject and title of the daily mail with the new trips near the member (count is the number of stops in it).
+trip.notification.digest.subject.weekly:
+    - '{count, plural, one {Weekly summary: a new trip in your area} other {Weekly summary: # new trips in your area}}'
+    - Email subject and title of the weekly mail with the new trips near the member (count is the number of stops in it).
+trip.notification.digest.subject.monthly:
+    - '{count, plural, one {Monthly summary: a new trip in your area} other {Monthly summary: # new trips in your area}}'
+    - Email subject and title of the monthly mail with the new trips near the member (count is the number of stops in it).
+trip.notification.preference.link:
+    - Change your trip notification preference
+    - Link text in trip notification emails pointing to the preferences page.
+trip.created:
+    - 'Trip has been created.'
+    - Flash message shown after trip creation (on top of the full list of own trips).
+trip.edited:
+    - 'Trip has been updated.'
+    - Flash message shown after trip update (on top of the full list of own trips).
+trip.update:
+    - 'Update'
+    - Label for the submit button in the trip edit form
+trip.error.date.overlap:
+    - 'Dates are overlapping.'
+    - Shown if a trip contains legs that overlap.
+trip.error.no.legs:
+    - 'A trip needs at least one stop.'
+    - 'Trip form: shown when the trip is saved without any stop.'
+    - validators
+trip.error.no.options:
+    - 'Please choose at least one of the options below.'
+    - 'Trip form: shown above the options of a stop (looking for a host, meet locals, private) when the trip is saved with none of them picked.'
+    - validators
+trip.leg.not.matched:
+    - "The leg's duration and the invitation's duration do not match."
+    - Alert message shown to the guest in their reply form (invitation).
+trip.incomplete.leg:
+    - 'You just accepted an invitation that is shorter than your stay in {location} ({arrival, date, medium} - {departure, date, medium}). Consider updating your trip as this will hide the leg from others.'
+    - Additional flash notice shown when a user accepts an invitation that didn\'t cover the full leg duration
+trip.remove:
+    - "Remove trip"
+    - Title of the remove trip modal (shown when the x button is clicked on my trips)
+trip.remove.close:
+    - "Close (leave trip)"
+    - Button label in the remove trip modal
+trip.remove.body:
+    - "<p>You're about to remove this trip from display.</p>
+       <p>Please note this can't be reverted. The trip itself will be hidden for everyone but not deleted as it might have been used for invitations.</p>
+      "
+trip.leg.invite:
+    - 'Invite'
+    - Button on a trip leg in the visitors list, opens the form to invite the traveler to stay with you
+trip.leg.invited:
+    - 'Invitation sent'
+    - Button on a trip leg in the visitors list when you already invited the traveler, opens the conversation
+trip.leg.message:
+    - 'Message'
+    - Button on a trip leg in the visitors list, opens a new message to the traveler
+trip.legs.title:
+    - 'Itinerary'
+    - Title of the list of stops in the trip creation and edit form
+trip.leg.add:
+    - 'Add a stop'
+    - Button under the stops of the trip creation and edit form, adds one more stop
+trip.details:
+    - 'Your trip'
+    - Title of the first part of the trip creation and edit form (title, description, travelers)
+trip.leg.options:
+    - 'For this stop'
+    - Label before the options of one stop (private, looking for a host, meet locals) in the trip creation form
+landing.visitors.within:
+    - 'Within'
+    - Label before the distance choices (20 km, 50 km, 100 km) above the Visitors list of the home page
+landing.visitors.host:
+    - 'Host'
+    - Short tag on a trip of the Visitors list of the home page, on phones, when the traveller looks for a host
+landing.visitors.more.stops:
+    - '{count, plural, one {+# stop} other {+# stops}}'
+    - Tag on a trip of the Visitors list of the home page; how many other stops the trip has
+trip.over:
+    - 'Over'
+    - My trips page, small tag on a trip whose dates are past
+trip.created.title:
+    - 'Your trip is online'
+    - Title of the confirmation shown in the side panel of the home page once a trip has been created
+trip.created.text:
+    - 'Hosts near your stops can now see it and invite you to stay.'
+    - Text under the title of the confirmation shown in the side panel once a trip has been created
+trip.created.see:
+    - 'See the trip'
+    - Link of the confirmation shown in the side panel once a trip has been created; opens the trip page
+trip.details.hint:
+    - 'A title and a few words help hosts know you.'
+    - Line under the title of the first part of the trip creation form (title, description, travellers)
+trip.legs.hint:
+    - 'Add each place you will stay, with your dates.'
+    - Line under the title of the itinerary part of the trip creation form
+trip.leg.location.pick:
+    - Pick the place in the list of suggestions
+    - Error under a stop's place when a name was typed but no suggestion was picked
+landing.visitors.near:
+    - 'Near'
+    - Label before the member's city (e.g. Near Berlin) above the Visitors list of the home page, left of the distance choices
+landing.visitors.this.week:
+    - 'This week'
+    - Small heading over the trips arriving in the next 7 days, in the Visitors list of the home page
+landing.visitors.later:
+    - 'Later'
+    - Small heading over the trips arriving after the next 7 days, in the Visitors list of the home page
+landing.visitors.today:
+    - 'Today'
+    - Badge on a trip of the Visitors list of the home page, when the traveller arrives today
+landing.visitors.tomorrow:
+    - 'Tomorrow'
+    - Badge on a trip of the Visitors list of the home page, when the traveller arrives tomorrow
+trips.visitors.of:
+    - 'of'
+    - Visitors page, between the distance buttons and the member's city (Within 20 km 50 km 100 km of Berlin)
+trips.visitors.coming:
+    - '{count, plural, one {visitor coming} other {visitors coming}}'
+    - Visitors page, after the number of trips near the member (4 visitors coming); the number is shown before it
+trip.step.where:
+    - 'Where'
+    - Plan a public trip, first of the four steps over the form (the stops and their dates)
+trip.step.about:
+    - 'About'
+    - Plan a public trip, second of the four steps over the form (title and description)
+trip.step.who:
+    - 'Who'
+    - Plan a public trip, third of the four steps over the form (travellers, extra info, invitation radius)
+trip.step.review:
+    - 'Review'
+    - Plan a public trip, last of the four steps over the form (the trip before it is published)
+trip.step.of:
+    - 'Step {n} of {total}'
+    - Plan a public trip, under the title of the panel, e.g. Step 2 of 4. Keep {n} and {total}
+trip.step.next:
+    - 'Next'
+    - Plan a public trip, button at the bottom that goes to the next step
+trip.step.back:
+    - 'Back'
+    - Plan a public trip, button at the bottom that goes back to the previous step
+trip.step.who.title:
+    - 'Who is travelling?'
+    - Plan a public trip, title of the third step (travellers, extra info, invitation radius)
+trip.step.who.hint:
+    - 'Tell hosts how many you are and how far they can be.'
+    - Plan a public trip, line under the title of the third step
+trip.publish:
+    - 'Publish trip'
+    - Plan a public trip, button of the last step that creates the trip
+trip.review.title:
+    - 'Ready to publish?'
+    - Plan a public trip, title of the last step that shows the trip before it is created
+trip.review.text:
+    - 'This is what hosts near your stops will see.'
+    - Plan a public trip, line under the title of the last step
+trip.review.edit:
+    - 'Edit'
+    - Plan a public trip, last step, link on each part of the trip that goes back to its step
+trip.review.travellers:
+    - '{count, plural, one {# traveller} other {# travellers}}'
+    - Plan a public trip, last step, the number of travellers. Keep the # sign
+trip.created.search:
+    - 'Find hosts in {place}'
+    - Main button of the confirmation shown once a trip has been created, opens the search around the first stop. Keep {place}
+trip.stop.title:
+    - 'Stop'
+    - Plan a public trip, title over each stop of the itinerary; the number of the stop is added after it (Stop 1, Stop 2)
+trip.created.view:
+    - 'View trip'
+    - Link on the right of the trip's card on the confirmation shown once a trip has been created; opens the trip page
+flash.trip.not.confirmed:
+    - 'You can plan trips once your account is active: please fill in all required details and confirm your email address.'
+    - Notice when a member who hasn't confirmed the email address opens the new trip form (shown on the trips page).
+trip.panel.solo:
+    - 'Travelling solo'
+    - 'Trip in the side panel, under the traveller''s name when they travel alone.'
+trip.panel.itinerary:
+    - 'Itinerary'
+    - 'Trip in the side panel, the title above the stops.'
+trip.panel.profile:
+    - 'Profile'
+    - 'Trip in the side panel, the link on the traveller''s card that opens their profile preview.'
+trip.panel.meet.locals.note:
+    - '{name} would like to meet locals.'
+    - 'Trip in the side panel, the orange note on a stop where the traveller ticked Meet locals. {name} is the traveller.'
+trip.leg.dates.empty:
+  - 'Please choose the dates of this stop.'
+  - 'Trip form: a stop has no arrival or departure.'
+  - validators
+trip.summary.empty:
+  - 'Please give your trip a title.'
+  - 'Trip form: the title is empty.'
+  - validators
+trip.description.empty:
+  - 'Please describe your trip.'
+  - 'Trip form: the description is empty.'
+  - validators

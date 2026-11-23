@@ -1,0 +1,129 @@
+email.invitation.reply.guest.open:
+    - This invitation hasn't been accepted or declined yet.
+    - Used in the email template for invitations
+email.invitation.reply.guest:
+    - "%username% replied to your invitation"
+    - Used in the email template for invitations
+email.invitation.reply.guest.cancelled:
+    - Your guest cancelled the invitation
+    - Used in the email template for invitations
+email.invitation.reply.guest.declined:
+    - Declined
+    - Used in the email template for invitations
+email.invitation.reply.guest.accepted:
+    - Accepted
+    - Used in the email template for invitations
+email.invitation.reply.guest.tentatively:
+    - Maybe
+    - Used in the email template for invitations
+email.invitation.reply.host:
+    - "%username% replied to your conversations about their invitation"
+    - Used in the email template for invitations
+email.invitation.reply.host.open:
+    - This invitation hasn't beem accepted or declined yet
+    - Used in the email template for invitations
+email.invitation.reply.host.cancelled:
+    - Cancelled
+    - Used in the email template for invitations
+email.invitation.reply.host.declined:
+    - Declined
+    - Used in the email template for invitations
+email.invitation.reply.host.accepted:
+    - Accepted
+    - Used in the email template for invitations
+email.invitation.reply.host.tentatively:
+    - Maybe
+    - Used in the email template for invitations
+email.invitation.to.stay:
+    - '{username} invites you to stay with them'
+    - Text in the email send if someone is invited
+or:
+    - or
+    - The text between the buttons in the email text for invitiations and requests
+email.suffix.declined:
+    - ' (declined)'
+    - suffix added to the notification email send for a request or invitation
+email.suffix.accepted:
+    - ' (accepted)'
+    - suffix added to the notification email send for a request or invitation
+email.suffix.cancelled:
+    - ' (cancelled)'
+    - suffix added to the notification email send for a request or invitation
+email.suffix.maybe:
+    - ' (maybe)'
+    - suffix added to the notification email send for a request or invitation
+email.login.reminder.subject:
+    - We miss you!
+    - Subject of the automated login reminder email
+email.login.reminder.body:
+    - |
+        <p>Hi {username},<br>
+           We miss you!</p>
+        <p>&nbsp;</p>
+        <p>We have noticed that you haven’t logged in to <a href="https://bewelcome.org/">BeWelcome.org</a> for a while.
+            &nbsp;It is important that you keep the status of your profile up to date, so that your guests or hosts can expect a quick reply.
+            &nbsp;That’s why we would like to invite you to check if your data, especially your “<a href="https://bewelcome.org/editmyprofile"><u>Accommodation Status</u></a>” (are you offering to host?)
+            and your “<a href="https://bewelcome.org/editmyprofile"><u>Hosting interest</u></a>” (how strong is your interest in receiving requests?) are still up to date.</p>
+        <p>&nbsp;</p>
+        <p>At the moment your profile is set to “<i>inactive</i>”. &nbsp;It has neither been deleted nor removed. It just means that your profile does not show up in the standard search results any longer.
+            &nbsp;It is unlikely that other members will contact you as they don’t find your profile.
+            &nbsp;Next time you log in, your profile will automatically become “<i>active</i>” again.</p>
+        <p>&nbsp;</p>
+        <p>Should you wish to delete your profile and leave the BeWelcome community, you can do that <a href="https://bewelcome.org/deleteprofile"><u>here</u></a>.</p>
+        <p>&nbsp;</p>
+        <p>We are looking forward to welcoming you back!</p>
+        <p>The BeWelcome volunteers.</p>
+        <p>&nbsp;</p>
+        <p><a href="https://bewelcome.org/login">Log in</a> | <a href="https://bewelcome.org/resetpassword">Forgot password</a> | <a href="https://bewelcome.org/deleteprofile">Delete account</a></p>
+    - Body of the automated login reminder email
+email.suspension.notice.subject:
+    - Account suspended - will be deleted on {deletion_date, date, short}
+    - Subject of the automated suspension notice email
+email.suspension.notice.body:
+    - |
+        <p>Hello {username},</p>
+        <p>We would like to inform you that <strong>your BeWelcome account has been suspended</strong> because you
+            have not logged in for several years, despite our previous reminders.</p>
+        <p>If you would like to use BeWelcome again, <a href="https://bewelcome.org/feedback?IdCategory=3">please contact us</a>
+            to request the reactivation of your account.</p>
+        <p>&nbsp;</p>
+        <p><strong>Please note</strong> that your account will be permanently deleted on {deletion_date, date, long}.
+            After this date, it will no longer be possible to reactivate your account.</p>
+        <p>&nbsp;</p>
+        <p>There will be no further reminders before the deletion.</p>
+        <p>&nbsp;</p>
+        <p>Best regards,<br>
+            The BeWelcome Team</p>
+    - Body of the automated suspension notice email
+email.footer.free:
+    text: 'BeWelcome is free, non-profit and run by volunteers.'
+    description: 'Footer of every email, under the card'
+    format: plain
+email.footer.settings:
+    text: 'Email settings'
+    description: 'Footer of every email: link to the preferences, where members choose which emails they get'
+    format: plain
+email.account:
+    text: 'Your account'
+    description: 'Small heading above the title of the emails about the account (signup, password, email address, reminders)'
+    format: plain
+email.group.open:
+    text: 'Go to the group'
+    description: 'Button in the emails about groups'
+    format: plain
+email.change:
+    text: 'You changed the email address of your BeWelcome account.'
+    description: 'Email to confirm a new email address'
+    format: plain
+email.change.confirm.link:
+    text: 'Please use the following link to confirm your new email address ({email_address}):'
+    description: 'Email to confirm a new email address; email_address is the new address'
+    format: plain
+email.change.confirm.email.address:
+    text: 'Confirm new email address'
+    description: 'Email to confirm a new email address: its title and button'
+    format: plain
+email.change.confirm.key:
+    text: 'If the link does not work, enter this key on the confirmation page:'
+    description: 'Email to confirm a new email address, above the key'
+    format: plain

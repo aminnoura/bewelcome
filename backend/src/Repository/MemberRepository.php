@@ -1,0 +1,513 @@
+<?php
+
+namespace App\Repository;
+
+use App\Command\MembersSuspendCommand;
+use App\Doctrine\AccommodationType;
+use App\Doctrine\MemberStatusType;
+use App\Entity\Comment;
+use App\Entity\Member;
+use App\Form\CustomDataClass\SearchFormRequest;
+use DateInterval;
+use DateTime;
+use DateTimeImmutable;
+use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\Query\Expr\Join;
+use Doctrine\ORM\QueryBuilder;
+use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Security\User\UserLoaderInterface;
+use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
+use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
+use Symfony\Component\Security\Core\User\PasswordUpgraderInterface;
+
+/**
+ * @extends ServiceEntityRepository<Member>
+ */
+class MemberRepository extends ServiceEntityRepository implements UserLoaderInterface, PasswordUpgraderInterface
+{
+    public const int ORDER_USERNAME = 2;
+    public const int ORDER_ACCOMMODATION = 6;
+    public const int ORDER_LOGIN = 8;
+    public const int ORDER_MEMBERSHIP = 10;
+    public const int ORDER_COMMENTS = 12;
+    public const int ORDER_DISTANCE = 14;
+
+    public const int DIRECTION_ASCENDING = 1;
+    public const int DIRECTION_DESCENDING = 2;
+
+    /** How many suspended members one UPDATE hands over to the data retention (by id: it locks only those rows). */
+    public const int SCHEDULE_CHUNK_SIZE = 1000;
+
+    public function __construct(ManagerRegistry $registry)
+    {
+        parent::__construct($registry, Member::class);
+    }
+
+    /**
+     * Active members per country of their active address, with their average birth year and age, most members first
+     * (volunteer tool "age by country").
+     *
+     * @return list<array{Name: ?string, Count: int, BirthYear: int, Age: int}>
+     */
+    public function getAgeByCountry(): array
+    {
+        $rows = $this->createQueryBuilder('m')
+            ->select('c.name AS Name, COUNT(m.id) AS Count, AVG(YEAR(m.birthdate)) AS averageYear')
+            ->innerJoin('m.addresses', 'a', Join::WITH, 'a.active = true')
+            ->innerJoin('a.location', 'l')
+            ->leftJoin('l.country', 'c')
+            ->where('m.status = :active')
+            ->andWhere('m.birthdate IS NOT NULL')
+            ->setParameter('active', MemberStatusType::ACTIVE)
+            ->groupBy('l.countryId')
+            ->addGroupBy('c.geonameId')
+            ->orderBy('Count', 'DESC')
+            ->getQuery()
+            ->getArrayResult();
+
+        $thisYear = (int) date('Y');
+
+        return array_map(static function (array $row) use ($thisYear): array {
+            $birthYear = (int) round((float) $row['averageYear']);
+
+            return [
+                'Name' => $row['Name'],
+                'Count' => (int) $row['Count'],
+                'BirthYear' => $birthYear,
+                'Age' => $thisYear - $birthYear,
+            ];
+        }, $rows);
+    }
+
+    /**
+     * The active members with the SafetyTeam right (level above 0), by username; not the team's own account.
+     *
+     * @return list<Member>
+     */
+    public function findSafetyTeamMembers(): array
+    {
+        return $this->createQueryBuilder('m')
+            ->innerJoin('m.volunteerRights', 'rv')
+            ->innerJoin('rv.right', 'r')
+            ->where('m.status = :active')
+            ->andWhere('m.username <> :team')
+            ->andWhere('r.name = :team')
+            ->andWhere('rv.level > 0')
+            ->setParameter('active', MemberStatusType::ACTIVE)
+            ->setParameter('team', 'SafetyTeam')
+            ->orderBy('m.username')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function upgradePassword(PasswordAuthenticatedUserInterface $user, string $newHashedPassword): void
+    {
+        if (!$user instanceof Member) {
+            throw new UnsupportedUserException(\sprintf('Instances of "%s" are not supported.', get_debug_type($user)));
+        }
+
+        $user->setPassword($newHashedPassword);
+
+        $this->getEntityManager()->flush();
+    }
+
+    /**
+     * Loads the user for the given username.
+     *
+     * This method must return null if the user is not found.
+     */
+    public function loadMembersByUsernamePart(string $username): mixed
+    {
+        return $this->createQueryBuilder('u')
+            ->select('u.username')
+            ->where('u.username Like :username')
+            ->setParameter('username', '%' . $username . '%')
+            ->andWhere('u.status in (:status)')
+            ->setParameter('status', MemberStatusType::ACTIVE_ALL_ARRAY)
+            ->setMaxResults(10)
+            ->orderBy('u.username', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function loadUserByIdentifier(string $identifier): ?Member
+    {
+        if (empty($identifier)) {
+            return null;
+        }
+
+        return $this->createQueryBuilder('u')
+            ->where('u.username = :username OR u.email = :email')
+            ->setParameter('username', $identifier)
+            ->setParameter('email', $identifier)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    public function loadUserByUsername(string $username): ?Member
+    {
+        return $this->loadUserByIdentifier($username);
+    }
+
+    /**
+     * The members whose username, name or email address has the term (Find member of the volunteer tools).
+     *
+     * @return list<Member> at most 20, by username
+     */
+    public function findByProfileInfo(string $term): array
+    {
+        return $this->createQueryBuilder('u')
+            ->where('u.username like :term')
+            ->orWhere('u.name like :term')
+            ->orWhere('u.email like :term')
+            ->orderBy('u.username', 'ASC')
+            ->setParameter('term', '%' . addcslashes($term, '%_\\') . '%')
+            ->setMaxResults(20)
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findByProfileInfoStartsWith($term): mixed
+    {
+        return $this->createQueryBuilder('u')
+            ->where('u.username like :term')
+            ->setParameter('term', $term . '%')
+            ->andWhere('u.status in (:status)')
+            ->setParameter('status', MemberStatusType::ACTIVE_ALL_ARRAY)
+            ->setMaxResults(20)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * @return list<Member> the members who left more than a year ago and still have their data, oldest first
+     */
+    public function loadDataRetentionMembers(?int $limit = null): array
+    {
+        $query = $this->createQueryBuilder('m')
+            ->where('m.status = :askToLeave')
+            ->andWhere('m.username NOT LIKE :retired')
+            ->andWhere('DATEDIFF(:now, m.lastActive) > 365')
+            ->setParameter('askToLeave', MemberStatusType::ASKED_TO_LEAVE)
+            ->setParameter('retired', 'Retired\_%')
+            ->setParameter('now', new DateTime())
+            ->orderBy('m.id', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+        ;
+
+        return $query->getResult();
+    }
+
+    /**
+     * Members who haven't been active for a year and weren't reminded in the last year (updated is set when one
+     * is reminded). Not those due for the suspension (members:suspend:notification): another reminder would put it
+     * off by a year, and the two commands would take turns depending on which got to a member first.
+     *
+     * @return list<Member>
+     */
+    public function findMembersToRemind(int $limit): array
+    {
+        $yearAgo = new DateTime('-1 year');
+
+        return $this->createQueryBuilder('m')
+            ->where('m.status IN (:statuses)')
+            ->andWhere('m.lastActive < :yearAgo OR (m.lastActive IS NULL AND m.created < :yearAgo)')
+            ->andWhere('m.updated IS NULL OR m.updated <= :yearAgo')
+            ->andWhere('NOT (' . $this->dueForSuspension() . ')')
+            ->setParameter('statuses', [
+                MemberStatusType::ACTIVE,
+                MemberStatusType::CHOICE_INACTIVE,
+                MemberStatusType::OUT_OF_REMIND,
+            ])
+            ->setParameter('outOfRemind', MemberStatusType::OUT_OF_REMIND)
+            ->setParameter('fiveYearsAgo', new DateTime('-5 years'))
+            ->setParameter('yearAgo', $yearAgo)
+            ->orderBy('m.id', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Reminded members who haven't been active for five years despite the reminders. The last reminder (members:
+     * remind:login sets updated) is at least a year old: a member gets a year after a reminder to come back.
+     * Members who wrote or got a comment are part of the community's references and aren't suspended.
+     *
+     * @return list<Member>
+     */
+    public function findMembersToSuspend(int $limit): array
+    {
+        return $this->createQueryBuilder('m')
+            ->where($this->dueForSuspension())
+            ->andWhere('m.updated <= :yearAgo')
+            ->setParameter('outOfRemind', MemberStatusType::OUT_OF_REMIND)
+            ->setParameter('fiveYearsAgo', new DateTime('-5 years'))
+            ->setParameter('yearAgo', new DateTime('-1 year'))
+            ->orderBy('m.id', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Members who didn't both confirm their email address and finish the setup within two weeks: waiting for the
+     * confirmation (MailToConfirm), confirmed but without setup (MailConfirmed), set up but not confirmed
+     * (Activated).
+     *
+     * @return list<Member>
+     */
+    public function findSignupsNotFinished(): array
+    {
+        return $this->createQueryBuilder('m')
+            ->where('m.status IN (:statuses)')
+            ->andWhere('m.created < :deadline')
+            ->setParameter('statuses', [
+                MemberStatusType::AWAITING_MAIL_CONFIRMATION,
+                MemberStatusType::MAIL_CONFIRMED,
+                MemberStatusType::ACCOUNT_ACTIVATED,
+            ])
+            ->setParameter('deadline', new DateTime('-' . Member::DAYS_TO_FINISH_SIGNUP . ' days'))
+            ->orderBy('m.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Hands suspended members over to the data retention (they left a year ago as far as it is concerned): those
+     * members:suspend:notification suspended (marked in Reminders) two months after their suspension, as its notice
+     * told them; those suspended otherwise, by the volunteers, a year after it, when they didn't get in touch.
+     * Members who got or wrote a comment stay suspended: they're part of the community's references.
+     *
+     * Two steps, so that the site keeps writing members meanwhile: the members are found by a plain read (finding
+     * them reads the whole table, and an UPDATE doing that would lock every row it reads, blocking every login), then
+     * changed by id, a chunk at a time, which locks only those rows. A member unsuspended in between stays as is.
+     *
+     * @return int the number of members
+     */
+    public function scheduleSuspendedMembersForDeletion(): int
+    {
+        $ids = $this->createQueryBuilder('m')
+            ->select('m.id')
+            ->where('m.status = :suspended')
+            ->andWhere(
+                '(m.remindersWithOutLogin = :suspendedAfterReminders AND m.updated < :twoMonthsAgo)'
+                . ' OR (m.remindersWithOutLogin <> :suspendedAfterReminders AND m.updated < :oneYearAgo)'
+            )
+            ->andWhere('NOT EXISTS (SELECT received.id FROM ' . Comment::class . ' received WHERE received.toMember = m)')
+            ->andWhere('NOT EXISTS (SELECT written.id FROM ' . Comment::class . ' written WHERE written.fromMember = m)')
+            ->setParameter('suspended', MemberStatusType::SUSPENDED)
+            ->setParameter('suspendedAfterReminders', MembersSuspendCommand::REMINDERS_SUSPENDED)
+            ->setParameter('twoMonthsAgo', new DateTime('-2 months'))
+            ->setParameter('oneYearAgo', new DateTime('-1 year'))
+            ->getQuery()
+            ->getSingleColumnResult();
+
+        $scheduled = 0;
+        foreach (array_chunk($ids, self::SCHEDULE_CHUNK_SIZE) as $chunk) {
+            $scheduled += $this->createQueryBuilder('m')
+                ->update()
+                ->set('m.status', ':askedToLeave')
+                ->set('m.lastActive', ':yearAgo')
+                ->where('m.id IN (:ids)')
+                ->andWhere('m.status = :suspended')
+                ->setParameter('askedToLeave', MemberStatusType::ASKED_TO_LEAVE)
+                ->setParameter('yearAgo', new DateTime('-1 year -1 day'))
+                ->setParameter('ids', $chunk)
+                ->setParameter('suspended', MemberStatusType::SUSPENDED)
+                ->getQuery()
+                ->execute();
+        }
+
+        return $scheduled;
+    }
+
+    public function applySearchFilters(QueryBuilder $qb, SearchFormRequest $searchRequest): void
+    {
+        // Status
+        $qb->andWhere('m.status IN (:activeStatus)')
+            ->setParameter('activeStatus', MemberStatusType::ACTIVE_SEARCH_ARRAY);
+
+        // Last Active
+        if ($searchRequest->last_active) {
+            $qb->andWhere('m.lastActive >= :lastActiveDate')
+                ->setParameter('lastActiveDate', new DateTimeImmutable("-{$searchRequest->last_active} months"));
+        }
+
+        // Gender
+        if ($searchRequest->gender) {
+            $qb->andWhere($qb->expr()->in('m.gender', ':gender'))
+               ->andWhere('BIT_AND(m.hideAttribute, :genderHiddenFlag) = 0')
+               ->setParameter('gender', $searchRequest->gender)
+               ->setParameter('genderHiddenFlag', Member::GENDER_HIDDEN);
+        }
+
+        // Comments
+        if ($searchRequest->has_comments) {
+            $hasCommentsQb = $this->getEntityManager()->createQueryBuilder()
+                ->select('1')
+                ->from('App\Entity\Comment', 'commentFilterTable')
+                ->where('commentFilterTable.toMember = m.id');
+
+            $qb->andWhere($qb->expr()->exists($hasCommentsQb->getDQL()));
+        }
+
+        // Age
+        if ($searchRequest->min_age || $searchRequest->max_age) {
+            $now = new DateTimeImmutable();
+
+            if ($searchRequest->min_age) {
+                $maxBirthDate = $now->sub(new DateInterval("P{$searchRequest->min_age}Y"));
+                $qb->andWhere('m.birthdate <= :maxBirthDate')
+                    ->setParameter('maxBirthDate', $maxBirthDate);
+            }
+
+            if ($searchRequest->max_age) {
+                $minBirthDate = $now->sub(new DateInterval("P{$searchRequest->max_age}Y"));
+                $qb->andWhere('m.birthdate >= :minBirthDate')
+                    ->setParameter('minBirthDate', $minBirthDate);
+            }
+
+            if ($searchRequest->min_age || $searchRequest->max_age) {
+                $qb->andWhere('BIT_AND(m.hideAttribute, :ageHiddenFlag) = 0')
+                   ->setParameter('ageHiddenFlag', Member::AGE_HIDDEN);
+            }
+        }
+
+        // Can Host
+        if ($searchRequest->can_host > 0) {
+            $qb->andWhere('m.maxGuests >= :canHost')
+                ->setParameter('canHost', $searchRequest->can_host);
+        }
+
+        // Accommodation
+        $accommodationTypes = [];
+        if ($searchRequest->accommodation_yes) {
+            $accommodationTypes[] = AccommodationType::YES;
+        }
+        if ($searchRequest->accommodation_no) {
+            $accommodationTypes[] = AccommodationType::NO;
+        }
+
+        if (!empty($accommodationTypes)) {
+            $qb->andWhere($qb->expr()->in('m.accommodation', ':accommodations'))
+               ->setParameter('accommodations', $accommodationTypes);
+        }
+
+        // Groups
+        if (!empty($searchRequest->groups)) {
+            $groupQb = $this->getEntityManager()->createQueryBuilder()
+                ->select('1')
+                ->from('App\Entity\GroupMembership', 'gm_sub')
+                ->where('gm_sub.member = m.id')
+                ->andWhere('gm_sub.group IN (:groups)');
+
+            $qb->andWhere($qb->expr()->exists($groupQb->getDQL()))
+               ->setParameter('groups', $searchRequest->groups);
+        }
+
+        // Languages
+        if (!empty($searchRequest->languages)) {
+            $langQb = $this->getEntityManager()->createQueryBuilder()
+                ->select('1')
+                ->from('App\Entity\MemberLanguageLevel', 'mll_sub')
+                ->where('mll_sub.member = m.id')
+                ->andWhere('mll_sub.language IN (:languages)');
+
+            $qb->andWhere($qb->expr()->exists($langQb->getDQL()))
+               ->setParameter('languages', $searchRequest->languages);
+        }
+
+        // Has Profile Picture
+        if ($searchRequest->has_profile_picture) {
+            $picQb = $this->getEntityManager()->createQueryBuilder()
+                ->select('1')
+                ->from('App\Entity\MemberPhoto', 'mp_sub')
+                ->where('mp_sub.member = m.id');
+            $qb->andWhere($qb->expr()->exists($picQb->getDQL()));
+        }
+
+        // Keywords (Search text)
+        if ($searchRequest->keywords) {
+            $keyword = '%' . $searchRequest->keywords . '%';
+
+            $qb
+                ->leftJoin('m.translations', 'mt_keyword', Join::WITH, 'mt_keyword.content LIKE :keyword')
+                ->andWhere(
+                    $qb->expr()->orX(
+                        'mt_keyword.id IS NOT NULL',
+                        'm.username LIKE :keyword',
+                        'm.name LIKE :keyword',
+                        'm.aboutMe LIKE :keyword',
+                        'm.hobbies LIKE :keyword',
+                        'm.books LIKE :keyword',
+                        'm.music LIKE :keyword',
+                        'm.movies LIKE :keyword',
+                        'm.occupation LIKE :keyword',
+                        'm.pastTrips LIKE :keyword',
+                        'm.plannedTrips LIKE :keyword',
+                        'm.pleaseBring LIKE :keyword',
+                        'm.whereYouSleep LIKE :keyword',
+                        'm.offerGuests LIKE :keyword',
+                        'm.offerHosts LIKE :keyword',
+                        'm.gettingThere LIKE :keyword',
+                        'm.organizations LIKE :keyword',
+                        'm.additionalAccommodationInfo LIKE :keyword',
+                        'm.iLiveWith LIKE :keyword',
+                        'm.maxLengthOfStay LIKE :keyword',
+                        'm.houseRules LIKE :keyword'
+                    )
+                )
+               ->setParameter('keyword', $keyword)
+            ;
+        }
+
+        // Has About Me
+        if ($searchRequest->has_about_me) {
+            $qb->leftJoin('m.translations', 'mt_about', Join::WITH, "mt_about.field = 'aboutMe' AND mt_about.content != ''")
+                ->andWhere(
+                    $qb->expr()->orX(
+                        "(m.aboutMe IS NOT NULL AND m.aboutMe != '')",
+                        'mt_about.id IS NOT NULL'
+                    )
+                )
+            ;
+        }
+
+        // Restrictions
+        if ($searchRequest->no_smoking) {
+            $qb->andWhere('m.restrictions LIKE :no_smoking')
+               ->setParameter('no_smoking', '%' . \App\Doctrine\HostRestrictionsType::NO_SMOKING . '%');
+        }
+        if ($searchRequest->no_alcohol) {
+            $qb->andWhere('m.restrictions LIKE :no_alcohol')
+               ->setParameter('no_alcohol', '%' . \App\Doctrine\HostRestrictionsType::NO_ALCOHOL . '%');
+        }
+        if ($searchRequest->no_drugs) {
+            $qb->andWhere('m.restrictions LIKE :no_drugs')
+               ->setParameter('no_drugs', '%' . \App\Doctrine\HostRestrictionsType::NO_DRUGS . '%');
+        }
+
+        // Offers
+        if ($searchRequest->offers_dinner) {
+            $qb->andWhere('m.standardOffers LIKE :offers_dinner')
+               ->setParameter('offers_dinner', '%' . \App\Doctrine\StandardOffersType::DINNER . '%');
+        }
+        if ($searchRequest->offers_tour) {
+            $qb->andWhere('m.standardOffers LIKE :offers_tour')
+               ->setParameter('offers_tour', '%' . \App\Doctrine\StandardOffersType::GUIDED_TOUR . '%');
+        }
+    }
+
+    /**
+     * DQL on m: reminded (OutOfRemind), away for five years, and neither got nor wrote a comment. Parameters
+     * :outOfRemind and :fiveYearsAgo.
+     */
+    private function dueForSuspension(): string
+    {
+        return 'm.status = :outOfRemind'
+            . ' AND (m.lastActive <= :fiveYearsAgo OR (m.lastActive IS NULL AND m.created <= :fiveYearsAgo))'
+            . ' AND NOT EXISTS (SELECT received.id FROM ' . Comment::class . ' received WHERE received.toMember = m)'
+            . ' AND NOT EXISTS (SELECT written.id FROM ' . Comment::class . ' written WHERE written.fromMember = m)';
+    }
+}

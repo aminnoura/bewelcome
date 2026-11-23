@@ -1,0 +1,123 @@
+<?php
+
+namespace App\TranslationLoader;
+
+use App\Doctrine\TranslationAllowedType;
+use App\Entity\Word;
+use DateTimeInterface;
+use Doctrine\DBAL\Exception\TableNotFoundException;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\Translation\Loader\LoaderInterface;
+use Symfony\Component\Translation\MessageCatalogue;
+
+/**
+ * DatabaseLoader loads translations from the words table (into the SQL cache).
+ *
+ * @author shevek <bla@blafaselblubb.abcde.biz>
+ */
+class DatabaseLoader implements LoaderInterface
+{
+    /** @var array MessageCatalogue */
+    private $originals = [];
+
+    public function __construct(private readonly EntityManagerInterface $em)
+    {
+    }
+
+    /**
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
+     */
+    public function load($resource, $locale, $domain = 'messages'): MessageCatalogue
+    {
+        if ('en' === $locale) {
+            return $this->loadEnglishOriginals($domain);
+        }
+
+        return $this->loadTranslationsForLocale($locale, $domain);
+    }
+
+    /**
+     * The text a language shows for a code it has a translation of: the English one when the translation is older
+     * than the last major change of the English text, or when the text isn't to be translated (except broadcasts).
+     * Also used to update a single text in the cached catalogues (TranslationModel::updateCachedText()).
+     */
+    public static function shownText(
+        string $code,
+        string $english,
+        ?DateTimeInterface $majorUpdate,
+        ?string $translationAllowed,
+        string $translation,
+        ?DateTimeInterface $translationUpdated,
+    ): string {
+        // a translation without a date is as new as can be (Word::getUpdated())
+        if (null !== $translationUpdated && null !== $majorUpdate && $translationUpdated < $majorUpdate) {
+            return $english;
+        }
+        if (TranslationAllowedType::TRANSLATION_ALLOWED === $translationAllowed || str_starts_with($code, 'broadcast_')) {
+            return $translation;
+        }
+
+        return $english;
+    }
+
+    /**
+     * @return list<array{code: string, sentence: string, updated: ?DateTimeInterface, majorUpdate: ?DateTimeInterface,
+     *     translationAllowed: string}>
+     */
+    private function getTranslationsForLocale(string $locale, string $domain): array
+    {
+        try {
+            return $this->em->getRepository(Word::class)->getTranslationsForLocale($locale, $domain);
+        } catch (TableNotFoundException) {
+            // Fresh database without a schema yet (e.g. the first bin/console call that is
+            // about to create it builds the cache and warms the translations). Fall back to
+            // the file based translations; the next cache:clear picks up the database ones.
+            return [];
+        }
+    }
+
+    private function loadTranslationsForLocale($locale, $domain): MessageCatalogue
+    {
+        if (!isset($this->originals[$domain])) {
+            $this->loadEnglishOriginals($domain);
+        }
+        $originals = $this->originals[$domain];
+
+        $catalogue = new MessageCatalogue($locale);
+
+        foreach ($this->getTranslationsForLocale($locale, $domain) as $translation) {
+            $code = $translation['code'];
+            if ($originals->has($code, $domain)) {
+                $metadata = $originals->getMetadata($code, $domain);
+                $catalogue->set($code, self::shownText(
+                    $code,
+                    $originals->get($code, $domain),
+                    $metadata['majorUpdate'],
+                    $metadata['translationAllowed'],
+                    $translation['sentence'],
+                    $translation['updated'],
+                ), $domain);
+            }
+        }
+
+        return $catalogue;
+    }
+
+    private function loadEnglishOriginals($domain): MessageCatalogue
+    {
+        if (!isset($this->originals[$domain])) {
+            $this->originals[$domain] = new MessageCatalogue('en');
+        }
+        $catalogue = $this->originals[$domain];
+
+        foreach ($this->getTranslationsForLocale('en', $domain) as $translation) {
+            $catalogue->set($translation['code'], $translation['sentence'], $domain);
+            $catalogue->setMetadata($translation['code'], [
+                'majorUpdate' => $translation['majorUpdate'],
+                'translationAllowed' => $translation['translationAllowed'],
+            ], $domain);
+        }
+
+        return $catalogue;
+    }
+}

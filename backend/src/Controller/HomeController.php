@@ -1,0 +1,75 @@
+<?php
+
+namespace App\Controller;
+
+use App\Entity\Location;
+use App\Model\DonateModel;
+use App\Model\StatisticsModel;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Validator\Constraints\NotBlank;
+
+class HomeController extends AbstractController
+{
+    public function __construct(private readonly EntityManagerInterface $entityManager)
+    {
+    }
+
+    #[Route(path: '/', name: 'homepage')]
+    public function show(Request $request, StatisticsModel $statisticsModel, DonateModel $donateModel, EntityManagerInterface $entityManager, array $locales): Response
+    {
+        $locationRepository = $entityManager->getRepository(Location::class);
+        $city = $locationRepository->find(2797114);
+
+        $member = $this->getUser();
+        if ($member) {
+            return $this->forward(LandingController::class . '::show');
+        }
+
+        $usernameForm = $this->createFormBuilder()
+            ->add('username', TextType::class, [
+                'constraints' => [
+                    new NotBlank(),
+                ],
+            ])
+            ->setAction('/signup')
+            ->setMethod('POST')
+            ->getForm();
+
+        $statistics = $statisticsModel->getStatisticsHomepage();
+
+        $images = $this->getHomeImages();
+
+        return $this->render('home/home.html.twig', [
+            'images' => $images,
+            'username' => $usernameForm->createView(),
+            'locale' => $request->getPreferredLanguage($locales),
+            'title' => 'BeWelcome',
+            'stats' => $statistics,
+            // The Supported by members block at the end: what was given this year
+            'campaign' => $donateModel->getStatForDonations(),
+        ]);
+    }
+
+    private function getHomeImages(): array
+    {
+        return [
+            1 => [
+                'high' => '/images/homepicture-big-1.jpg',
+                'low' => '/images/homepicture-small-1.jpg',
+            ],
+            2 => [
+                'high' => '/images/homepicture-big-2.jpg',
+                'low' => '/images/homepicture-small-2.jpg',
+            ],
+            3 => [
+                'high' => '/images/homepicture-big-3.jpg',
+                'low' => '/images/homepicture-small-3.jpg',
+            ],
+        ];
+    }
+}

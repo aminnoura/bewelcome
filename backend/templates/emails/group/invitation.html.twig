@@ -1,0 +1,16 @@
+{% extends 'emails/base.html.twig' %}
+{#
+  An invitation into a group, to the member: who invites, to which group; join or not with the signed links.
+  group ({ name, id }), sender (the inviting admin), receiver.
+#}
+{% block preheader %}{{ 'group.invitation.groupname'|trans({ groupname: group.name }) }}{% endblock %}
+
+{% block content %}
+    {% include 'emails/_partials/eyebrow.html.twig' with { text: 'group'|trans ~ ' · ' ~ group.name } %}
+    {% include 'emails/_partials/title.html.twig' with { text: 'group.invitation.groupname'|trans({ groupname: group.name }) } %}
+    {% include 'emails/_partials/sender.html.twig' with { member: sender } %}
+    {% include 'emails/_partials/buttons.html.twig' with {
+        primary: { label: 'groupsjointhegroup'|trans, url: signed_url('accept_invite_to_group', { groupId: group.id, memberId: receiver.id }) },
+        secondary: { label: 'decline'|trans, url: signed_url('decline_invite_to_group', { groupId: group.id, memberId: receiver.id }) },
+    } %}
+{% endblock content %}

@@ -1,0 +1,48 @@
+<?php
+
+namespace App\Security\PasswordHasher;
+
+use Symfony\Component\PasswordHasher\Exception\InvalidPasswordException;
+use Symfony\Component\PasswordHasher\Hasher\CheckPasswordLengthTrait;
+use Symfony\Component\PasswordHasher\PasswordHasherInterface;
+
+class LegacyPasswordHasher implements PasswordHasherInterface
+{
+    use CheckPasswordLengthTrait;
+
+    public function hash(string $plainPassword): string
+    {
+        if ($this->isPasswordTooLong($plainPassword)) {
+            throw new InvalidPasswordException();
+        }
+
+        return $this->encodePassword($plainPassword);
+    }
+
+    public function verify(string $hashedPassword, string $plainPassword): bool
+    {
+        $encodedPassword = $this->encodePassword($plainPassword);
+
+        return hash_equals($hashedPassword, $encodedPassword);
+    }
+
+    /**
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
+     *
+     * Parameter not needed but signature is given by symfony.
+     */
+    public function needsRehash(string $hashedPassword): bool
+    {
+        // Always migrate passwords.
+        return true;
+    }
+
+    private function encodePassword($plaintext): string
+    {
+        return '*' . strtoupper(
+            sha1(
+                sha1((string) $plaintext, true)
+            )
+        );
+    }
+}

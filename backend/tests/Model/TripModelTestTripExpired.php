@@ -1,0 +1,121 @@
+<?php
+
+namespace App\Tests\Model;
+
+use App\Entity\Leg;
+use App\Entity\Trip;
+use DateTime;
+use InvalidArgumentException;
+
+class TripModelTestTripExpired extends TripModelTestCase
+{
+    public function testTripExpiredThrowsInvalidArgumentWithNoLegs(): void
+    {
+        $trip = new Trip();
+
+        $tripModel = $this->getTripModel();
+        $this->expectException(InvalidArgumentException::class);
+        $tripModel->hasTripExpired($trip);
+    }
+
+    public function testTripExpiredOneLeg(): void
+    {
+        $leg = new Leg();
+        $leg->setDeparture(new DateTime('2020-01-01'));
+
+        $trip = new Trip();
+        $trip->addLeg($leg);
+
+        $tripModel = $this->getTripModel();
+        $expired = $tripModel->hasTripExpired($trip);
+
+        $this->assertTrue($expired);
+    }
+
+    public function testTripNotExpiredOneLeg(): void
+    {
+        $tomorrow = new DateTime('+1day');
+        $leg = new Leg();
+        $leg->setDeparture($tomorrow);
+
+        $trip = new Trip();
+        $trip->addLeg($leg);
+
+        $tripModel = $this->getTripModel();
+        $expired = $tripModel->hasTripExpired($trip);
+
+        $this->assertFalse($expired);
+    }
+
+    public function testTripExpiredMultipleLegs(): void
+    {
+        $firstLeg = new Leg();
+        $firstLeg->setDeparture(new DateTime('2020-01-01'));
+        $secondLeg = new Leg();
+        $secondLeg->setDeparture(new DateTime('2020-01-02'));
+        $thirdLeg = new Leg();
+        $thirdLeg->setDeparture(new DateTime('2020-01-03'));
+
+        $trip = new Trip();
+        $trip
+            ->addLeg($firstLeg)
+            ->addLeg($secondLeg)
+            ->addLeg($thirdLeg)
+        ;
+
+        $tripModel = $this->getTripModel();
+        $expired = $tripModel->hasTripExpired($trip);
+
+        $this->assertTrue($expired);
+    }
+
+    public function testTripNotExpiredMultipleLegs(): void
+    {
+        $tomorrow = new DateTime('+1day');
+        $theDayAfterTomorrow = new DateTime('+2days');
+        $theNextDayAfterTheDayAfterTomorrow = new DateTime('+3days');
+        $firstLeg = new Leg();
+        $firstLeg->setDeparture($tomorrow);
+        $secondLeg = new Leg();
+        $secondLeg->setDeparture($theDayAfterTomorrow);
+        $thirdLeg = new Leg();
+        $thirdLeg->setDeparture($theNextDayAfterTheDayAfterTomorrow);
+
+        $trip = new Trip();
+        $trip
+            ->addLeg($firstLeg)
+            ->addLeg($secondLeg)
+            ->addLeg($thirdLeg)
+        ;
+
+        $tripModel = $this->getTripModel();
+        $expired = $tripModel->hasTripExpired($trip);
+
+        $this->assertFalse($expired);
+    }
+
+    public function testTripNotExpiredMultipleLegsPartlyInThePast(): void
+    {
+        $yesterday = new DateTime('-1day');
+        $theDayAfterTomorrow = new DateTime('+2days');
+        $theNextDayAfterTheDayAfterTomorrow = new DateTime('+3days');
+        $firstLeg = new Leg();
+        $firstLeg->setDeparture($yesterday);
+        $secondLeg = new Leg();
+        $secondLeg->setDeparture($theDayAfterTomorrow);
+        $thirdLeg = new Leg();
+        $thirdLeg->setDeparture($theNextDayAfterTheDayAfterTomorrow);
+
+        $trip = new Trip();
+        $trip
+            ->addLeg($firstLeg)
+            ->addLeg($secondLeg)
+            ->addLeg($thirdLeg)
+        ;
+
+        $tripModel = $this->getTripModel();
+        $expired = $tripModel->hasTripExpired($trip);
+
+        $this->assertFalse($expired);
+    }
+}

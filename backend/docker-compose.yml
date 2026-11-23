@@ -1,0 +1,70 @@
+x-cache-from:
+  - &cache-from
+    cache_from:
+      - ${NGINX_IMAGE:-bewelcome/nginx}
+      - ${PHP_IMAGE:-bewelcome/php}
+
+services:
+  php:
+    build:
+      context: .
+      target: bewelcome_php_dev
+      <<: *cache-from
+    image: ${PHP_IMAGE:-bewelcome/php}
+    healthcheck:
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      test: ["NONE"]
+    depends_on:
+      - db
+      - manticore
+      - mailer
+  web:
+    build:
+      context: .
+      target: bewelcome_nginx
+      <<: *cache-from
+    image: ${NGINX_IMAGE:-bewelcome/nginx}
+    depends_on:
+      - php
+
+  db:
+    image: mariadb:12.3
+    environment:
+      MYSQL_ROOT_PASSWORD: bewelcome_root_dev
+      MYSQL_DATABASE: bewelcome
+      MYSQL_USER: bewelcome
+      MYSQL_PASSWORD: bewelcome
+    volumes:
+      - db-data:/var/lib/mysql:rw
+
+  manticore:
+    container_name: manticore
+    # manticoresearch-php 4.x needs Manticore >= 7 (it sends "table" instead of "index").
+    image: manticoresearch/manticore:29.9.0
+    restart: always
+    ports:
+      - 127.0.0.1:9306:9306
+      - 127.0.0.1:9308:9308
+      - 127.0.0.1:9312:9312
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./data:/var/lib/manticore
+
+  mailer:
+    image: axllent/mailpit
+    environment:
+      MP_SMTP_BIND_ADDR: "0.0.0.0:25"
+      MP_UI_BIND_ADDR: "0.0.0.0:80"
+
+volumes:
+  db-data: {}

@@ -1,0 +1,42 @@
+<?php
+
+namespace App\Model\MemberDataExtractor;
+
+use App\Entity\Member;
+use App\Entity\MemberPhoto;
+use Symfony\Component\Filesystem\Filesystem;
+
+final class ProfilePicturesExtractor extends AbstractExtractor implements ExtractorInterface
+{
+    public function extract(Member $member, string $tempDir): array
+    {
+        $variants = ['_xs', '_30_30', '_75_75', '_150', '_200', '_500', '_original'];
+
+        // Copy all profile pictures
+        $filesystem = new Filesystem();
+        $pictureDir = $tempDir . 'pictures/';
+        $filesystem->mkdir($pictureDir);
+        $photoRepository = $this->getRepository(MemberPhoto::class);
+        /** @var MemberPhoto[] $photos */
+        $photos = $photoRepository->findBy(['member' => $member]);
+        foreach ($photos as $photo) {
+            if (is_file($photo->getFilepath())) {
+                $filesystem->copy($photo->getFilepath(), $pictureDir
+                    . pathinfo($photo->getFilepath(), \PATHINFO_FILENAME)
+                    . $this->imageExtension($photo->getFilepath()));
+            }
+            foreach ($variants as $variant) {
+                $filepath = $photo->getFilepath() . $variant;
+                $filename = pathinfo($filepath, \PATHINFO_FILENAME);
+                if (is_file($filepath)) {
+                    $filesystem->copy($filepath, $pictureDir
+                        . $filename
+                        . $this->imageExtension($filepath));
+                }
+            }
+        }
+
+        // no page: the profile shows the picture (MemberDataExtractor)
+        return [];
+    }
+}

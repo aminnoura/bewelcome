@@ -1,0 +1,140 @@
+<?php
+
+namespace App\Controller;
+
+use App\Entity\HostingRequest;
+use App\Entity\Member;
+use App\Entity\Message;
+use App\Model\BaseRequestModel;
+use App\Model\ConversationModel;
+use App\Utilities\RedirectBackTrait;
+use App\Utilities\TranslatedFlashTrait;
+use App\Utilities\TranslatorTrait;
+use DateTime;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\Form\Form;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Contracts\Translation\LocaleAwareInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
+
+abstract class BaseRequestAndInvitationController extends AbstractController
+{
+    use RedirectBackTrait;
+    use TranslatedFlashTrait;
+    use TranslatorTrait;
+
+    protected ConversationModel $conversationModel;
+
+    public function __construct(
+        protected readonly BaseRequestModel $model,
+        protected readonly EntityManagerInterface $entityManager,
+    ) {
+    }
+
+    abstract protected function addExpiredFlash(Member $receiver);
+
+    /**
+     * Back to the conversation after an answer. In the side panel (?embed=1) it stays in the
+     * panel: the conversation is shown again there instead of the whole inbox page.
+     */
+    protected function redirectToConversation(Message $message): RedirectResponse
+    {
+        $embed = $this->container->get('request_stack')->getCurrentRequest()?->query->getBoolean('embed');
+
+        return $this->redirectToRoute('conversation_view', ['id' => $message->getId()] + ($embed ? ['embed' => 1] : []));
+    }
+
+    protected function getMessageClone(Message $message): Message
+    {
+        // copy only the bare minimum needed
+        $newMessage = new Message();
+        $newMessage->setSubject($message->getSubject());
+        $newMessage->setRequest($message->getRequest());
+        $newMessage->setMessage('');
+        $newMessage->setInitiator($message->getInitiator());
+
+        return $newMessage;
+    }
+
+    protected function getMessageAndRequestClone(Message $message): Message
+    {
+        // copy only the bare minimum needed
+        $newMessage = new Message();
+        $newMessage->setSubject($message->getSubject());
+        $newRequest = clone $message->getRequest();
+        $newMessage->setRequest($newRequest);
+        $newMessage->setMessage('');
+        $newMessage->setInitiator($message->getInitiator());
+
+        return $newMessage;
+    }
+
+    protected function persistFinalRequest(
+        Form $requestForm,
+        $currentRequest,
+        Member $sender,
+        Member $receiver,
+    ): Message {
+        $data = $requestForm->getData();
+        $clickedButton = $requestForm->getClickedButton()->getName();
+
+        // handle changes in request and subject
+        $newRequest = $this->model->getFinalRequest($sender, $receiver, $currentRequest, $data, $clickedButton);
+        $this->entityManager->persist($newRequest);
+        $this->entityManager->flush();
+
+        return $newRequest;
+    }
+
+    protected function getMessageFromData($data, $member, $host): Message
+    {
+        /** @var Message $hostingRequest */
+        $hostingRequest = $data;
+        $hostingRequest->setSender($member);
+        $hostingRequest->setReceiver($host);
+        $hostingRequest->setFirstRead(null);
+        $hostingRequest->setStatus('Sent');
+        $hostingRequest->setFolder('Normal');
+        $hostingRequest->setCreated(new DateTime());
+
+        return $hostingRequest;
+    }
+
+    protected function getSubjectForReply(Message $newRequest): string
+    {
+        $subject = $newRequest->getSubject()->getSubject();
+        if (!str_starts_with($subject, 'Re:')) {
+            $subject = 'Re: ' . $subject;
+        }
+
+        $locale = $newRequest->getReceiver()->getLocale();
+
+        return $this->adjustSubject($newRequest->getRequest()->getStatus(), $subject, $locale);
+    }
+
+    private function adjustSubject(int $status, string $subject, string $locale): string
+    {
+        $suffix = match ($status) {
+            HostingRequest::REQUEST_DECLINED => 'email.suffix.declined',
+            HostingRequest::REQUEST_CANCELLED => 'email.suffix.cancelled',
+            HostingRequest::REQUEST_ACCEPTED => 'email.suffix.accepted',
+            HostingRequest::REQUEST_TENTATIVELY_ACCEPTED => 'email.suffix.maybe',
+            default => '',
+        };
+
+        if (!empty($suffix)) {
+            /** @var TranslatorInterface&LocaleAwareInterface $translator */
+            $translator = $this->getTranslator();
+            $currentLocale = $translator->getLocale();
+            $translator->setLocale($locale);
+            $suffix = $translator->trans($suffix);
+            if (!str_contains($suffix, $subject)) {
+                $subject .= ' ' . $suffix;
+            }
+            $translator->setLocale($currentLocale);
+        }
+
+        return $subject;
+    }
+}
