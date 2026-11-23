@@ -16,16 +16,13 @@ import {
   fetchMemberActivities,
   fetchMemberConversations,
   fetchMemberTrips,
+  fetchMemberVisitorsCount,
   fetchRealUserProfile,
-  INITIAL_ACTIVITIES,
-  INITIAL_CONVERSATIONS,
-  INITIAL_GROUPS,
-  INITIAL_HOSTS,
-  INITIAL_THREADS,
-  INITIAL_TRIPS,
   LoginResult,
   loginToServer,
   logoutFromServer,
+  updateAccommodationLive,
+  updateMaxGuestsLive,
 } from '../api/bewelcomeApi';
 
 interface AppContextValue {
@@ -40,6 +37,7 @@ interface AppContextValue {
     username: string;
     name: string;
     initials: string;
+    avatarUrl?: string;
     city: string;
     country: string;
     accommodation: HostingStatus;
@@ -47,12 +45,13 @@ interface AppContextValue {
     language: string;
     pushEnabled: boolean;
   };
+  visitorsCount: number;
   setHostingStatus: (status: HostingStatus) => void;
   setMaxGuests: (count: number) => void;
   togglePush: () => void;
 
   hosts: Member[];
-  selectedHost: Member;
+  selectedHost: Member | null;
   openHostProfile: (host: Member) => void;
   openRequestForHost: (host: Member) => void;
 
@@ -86,26 +85,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [currentScreen, setCurrentScreen] = useState<ScreenKey>('auth');
 
-  const [me, setMe] = useState({
-    username: 'member-3',
-    name: 'Maya Klein',
-    initials: 'MK',
+  const [me, setMe] = useState<{
+    username: string;
+    name: string;
+    initials: string;
+    avatarUrl?: string;
+    city: string;
+    country: string;
+    accommodation: HostingStatus;
+    maxGuests: number;
+    language: string;
+    pushEnabled: boolean;
+  }>({
+    username: 'aminmoura',
+    name: 'Amin',
+    initials: 'AM',
+    avatarUrl: 'https://bewelcome.org/members/avatar/aminmoura/128',
     city: 'Berlin',
     country: 'Germany',
     accommodation: 'yes' as HostingStatus,
     maxGuests: 2,
-    language: 'English (EN)',
+    language: 'English',
     pushEnabled: true,
   });
 
-  const [hosts, setHosts] = useState<Member[]>(INITIAL_HOSTS);
-  const [selectedHost, setSelectedHost] = useState<Member>(INITIAL_HOSTS[0]);
-  const [trips, setTrips] = useState<Trip[]>(INITIAL_TRIPS);
-  const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
-  const [selectedConversationId, setSelectedConversationId] = useState<number>(INITIAL_CONVERSATIONS[0].id);
-  const [activities, setActivities] = useState<ActivityEvent[]>(INITIAL_ACTIVITIES);
-  const [threads, setThreads] = useState<ForumThread[]>(INITIAL_THREADS);
-  const [groups, setGroups] = useState<CommunityGroup[]>(INITIAL_GROUPS);
+  const [visitorsCount, setVisitorsCount] = useState(4);
+
+  const [hosts, setHosts] = useState<Member[]>([]);
+  const [selectedHost, setSelectedHost] = useState<Member | null>(null);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState<number>(0);
+  const [activities, setActivities] = useState<ActivityEvent[]>([]);
+  const [threads, setThreads] = useState<ForumThread[]>([]);
+  const [groups, setGroups] = useState<CommunityGroup[]>([]);
 
   const loadUserData = async (username: string) => {
     try {
@@ -115,15 +128,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         username: profile.username,
         name: profile.name,
         initials,
-        city: profile.city || 'Berlin',
-        country: profile.country || 'Germany',
+        avatarUrl: profile.avatarUrl,
+        city: profile.city || '',
+        country: profile.country || '',
         accommodation: profile.accommodation,
         maxGuests: profile.maxGuests,
-        language: profile.languages[0] || 'English (EN)',
+        language: profile.languages[0] || 'English',
         pushEnabled: true,
       });
 
-      // Load user's real trips, messages, and activities
+      // Load user's real trips, messages, visitors count, and activities
+      fetchMemberVisitorsCount().then(setVisitorsCount).catch(() => {});
       const [realTrips, realConversations, realActivities] = await Promise.all([
         fetchMemberTrips(),
         fetchMemberConversations(),
@@ -134,6 +149,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setConversations(realConversations);
       if (realConversations.length > 0) {
         setSelectedConversationId(realConversations[0].id);
+      } else {
+        setSelectedConversationId(0);
       }
       setActivities(realActivities);
     } catch (err) {
@@ -176,11 +193,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCurrentScreen('auth');
   };
 
-  const setHostingStatus = (accommodation: HostingStatus) =>
+  const setHostingStatus = (accommodation: HostingStatus) => {
     setMe((prev) => ({ ...prev, accommodation }));
+    updateAccommodationLive(accommodation).catch(() => {});
+  };
 
-  const setMaxGuests = (maxGuests: number) =>
-    setMe((prev) => ({ ...prev, maxGuests: Math.max(0, Math.min(10, maxGuests)) }));
+  const setMaxGuests = (maxGuests: number) => {
+    const val = Math.max(0, Math.min(10, maxGuests));
+    setMe((prev) => ({ ...prev, maxGuests: val }));
+    updateMaxGuestsLive(me.username, val).catch(() => {});
+  };
 
   const togglePush = () =>
     setMe((prev) => ({ ...prev, pushEnabled: !prev.pushEnabled }));
@@ -297,6 +319,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         me,
+        visitorsCount,
         setHostingStatus,
         setMaxGuests,
         togglePush,

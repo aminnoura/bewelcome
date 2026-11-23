@@ -20,8 +20,18 @@ export function ActivitiesScreen() {
       </View>
 
       <View style={[styles.grid, isDesktop && styles.gridDesktop]}>
-        {activities.map((ev) => (
-          <Card key={ev.id} style={[styles.card, isDesktop && { flex: 1 }]}>
+        {activities.length === 0 ? (
+          <Card style={{ padding: 32, alignItems: 'center', gap: 8, flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.ink }}>
+              No upcoming events
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center', maxWidth: 360 }}>
+              There are no upcoming gatherings nearby. Check back soon or organize a community meetup!
+            </Text>
+          </Card>
+        ) : (
+          activities.map((ev) => (
+            <Card key={ev.id} style={[styles.card, isDesktop && { flex: 1 }]}>
             <View style={[styles.banner, { backgroundColor: ev.accent }]}>
               <View style={styles.datePill}>
                 <Text style={styles.dateMonth}>{ev.month}</Text>
@@ -59,7 +69,8 @@ export function ActivitiesScreen() {
               </View>
             </View>
           </Card>
-        ))}
+        ))
+      )}
       </View>
     </ScrollView>
   );

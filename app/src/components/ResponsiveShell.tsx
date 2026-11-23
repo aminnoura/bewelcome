@@ -114,7 +114,7 @@ export function ResponsiveShell({ children }: { children: React.ReactNode }) {
             </Pressable>
 
             <View style={styles.profileRow}>
-              <Avatar initials={me.initials} color={colors.brand} size={34} />
+              <Avatar initials={me.initials} color={colors.brand} size={34} uri={me.avatarUrl} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.profileName} numberOfLines={1}>{me.name}</Text>
                 <Text style={styles.profileCity} numberOfLines={1}>

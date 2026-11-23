@@ -4,6 +4,9 @@ const https = require('https');
 
 const config = getDefaultConfig(__dirname);
 
+// Persistent in-memory session cookie jar for BeWelcome proxy
+const bwSessionCookies = new Map();
+
 const prevEnhanceMiddleware = config.server.enhanceMiddleware;
 config.server.enhanceMiddleware = (middleware, server) => {
   const customMiddleware = (req, res, next) => {
@@ -12,8 +15,7 @@ config.server.enhanceMiddleware = (middleware, server) => {
     const isLocalProxy = req.url && req.url.startsWith('/local-proxy');
 
     if (isBwProxy || isLocalProxy) {
-      console.log(`[Proxy Req] ${req.method} ${req.url} | Cookie: ${req.headers.cookie ? req.headers.cookie.split(';')[0] : 'NONE'}`);
-      const origin = req.headers.origin || '*';
+      const origin = req.headers.origin || 'http://localhost:8081';
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -35,9 +37,30 @@ config.server.enhanceMiddleware = (middleware, server) => {
       delete headers.host;
       delete headers['accept-encoding'];
       headers['host'] = targetUrl.host;
+
       if (isBwProxy) {
         headers['origin'] = 'https://bewelcome.org';
         headers['referer'] = 'https://bewelcome.org' + (targetPath.includes('login_check') ? '/login' : '');
+
+        // Merge incoming client cookies with stored session cookies
+        const cookieMap = new Map();
+        for (const [k, v] of bwSessionCookies.entries()) {
+          cookieMap.set(k, v);
+        }
+        if (req.headers.cookie) {
+          req.headers.cookie.split(';').forEach(c => {
+            const [k, ...v] = c.trim().split('=');
+            if (k && v.length) cookieMap.set(k.trim(), v.join('='));
+          });
+        }
+        const mergedCookies = Array.from(cookieMap.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join('; ');
+        if (mergedCookies) {
+          headers['cookie'] = mergedCookies;
+        }
+
+        console.log(`[BW Proxy Req] ${req.method} ${targetPath} | Cookies: ${mergedCookies ? Array.from(cookieMap.keys()).join(', ') : 'NONE'}`);
       }
 
       const requester = isHttps ? https.request : http.request;
@@ -47,12 +70,33 @@ config.server.enhanceMiddleware = (middleware, server) => {
       }, (proxyRes) => {
         res.statusCode = proxyRes.statusCode;
 
+        // Capture session cookies set by BeWelcome into our proxy cookie jar
+        if (isBwProxy && proxyRes.headers['set-cookie']) {
+          const rawCookies = Array.isArray(proxyRes.headers['set-cookie'])
+            ? proxyRes.headers['set-cookie']
+            : [proxyRes.headers['set-cookie']];
+          for (const raw of rawCookies) {
+            const firstPart = raw.split(';')[0];
+            const [k, ...v] = firstPart.split('=');
+            if (k && v.length) {
+              const val = v.join('=').trim();
+              if (val === 'deleted' || !val) {
+                bwSessionCookies.delete(k.trim());
+              } else {
+                bwSessionCookies.set(k.trim(), val);
+              }
+            }
+          }
+          console.log(`[BW Proxy Jar] Stored session cookies: ${Array.from(bwSessionCookies.keys()).join(', ')}`);
+        }
+
         for (const [key, val] of Object.entries(proxyRes.headers)) {
           if (key.toLowerCase() === 'set-cookie') {
             const cookies = Array.isArray(val) ? val : [val];
             const rewritten = cookies.map(c =>
               c.replace(/Domain=[^;]+;?\s*/gi, '')
                .replace(/Secure;?\s*/gi, '')
+               .replace(/SameSite=[^;]+;?\s*/gi, 'SameSite=Lax; ')
             );
             res.setHeader('set-cookie', rewritten);
           } else if (key.toLowerCase() === 'location') {

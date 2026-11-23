@@ -8,8 +8,26 @@ import { breakpoints, colors, radii } from '../theme/tokens';
 export function MemberProfileScreen() {
   const { width } = useWindowDimensions();
   const isDesktop = width >= breakpoints.desktop;
-  const { selectedHost: m, navigate, openRequestForHost } = useApp();
+  const { selectedHost: m, me, navigate, openRequestForHost } = useApp();
   const [tab, setTab] = useState<'about' | 'home' | 'refs'>('about');
+
+  if (!m) {
+    return (
+      <ScrollView contentContainerStyle={[styles.scroll, isDesktop && styles.scrollDesktop]}>
+        <Pressable onPress={() => navigate('explore')} style={styles.backRow}>
+          <ArrowLeft size={16} color={colors.ink} />
+          <Text style={styles.backText}>Back to Hosts</Text>
+        </Pressable>
+        <Card style={{ padding: 32, alignItems: 'center', gap: 10 }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.ink }}>No Member Selected</Text>
+          <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center' }}>
+            Find members or hosts on the Explore screen to view their profile.
+          </Text>
+          <Button label="Search Members" onPress={() => navigate('explore')} />
+        </Card>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView contentContainerStyle={[styles.scroll, isDesktop && styles.scrollDesktop]}>
@@ -21,7 +39,12 @@ export function MemberProfileScreen() {
       {/* Profile Header */}
       <Card style={styles.headerCard}>
         <View style={styles.headerTop}>
-          <Avatar initials={m.initials} color={m.avatarColor} size={62} />
+          <Avatar
+            initials={m.initials}
+            color={m.avatarColor}
+            size={62}
+            uri={m.avatarUrl || (m.username === me.username ? me.avatarUrl : undefined)}
+          />
           <View style={{ flex: 1, gap: 4 }}>
             <View style={styles.nameRow}>
               <Text style={styles.name}>{m.name}</Text>

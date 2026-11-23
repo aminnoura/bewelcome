@@ -36,8 +36,20 @@ export function TripsScreen() {
 
       <View style={[styles.grid, isDesktop && styles.gridDesktop]}>
         <View style={[{ gap: 14 }, isDesktop && { flex: 7 }]}>
-          {list.map((trip) => (
-            <Card key={trip.id} style={{ gap: 14 }}>
+          {list.length === 0 ? (
+            <Card style={{ padding: 32, alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.ink }}>
+                No trips planned
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center', maxWidth: 360 }}>
+                {tab === 'mine'
+                  ? 'Share your upcoming travel itinerary so hosts can see you are coming and invite you.'
+                  : 'No travelers currently have public trips to this area.'}
+              </Text>
+            </Card>
+          ) : (
+            list.map((trip) => (
+              <Card key={trip.id} style={{ gap: 14 }}>
               <View style={styles.rowBetween}>
                 <View>
                   <Text style={styles.tripTitle}>{trip.title}</Text>
@@ -89,7 +101,8 @@ export function TripsScreen() {
                 />
               </View>
             </Card>
-          ))}
+          ))
+        )}
         </View>
 
         {/* Visual Route Map */}

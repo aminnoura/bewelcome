@@ -133,51 +133,63 @@ export function ExploreHostsScreen() {
             {filteredHosts.length} welcoming host{filteredHosts.length === 1 ? '' : 's'} found
           </Text>
 
-          {filteredHosts.map((h) => {
-            const selected = h.id === focusedHost?.id;
-            return (
-              <Pressable key={h.id} onPress={() => setFocusedHostId(h.id)}>
-                <Card style={selected ? [styles.hostCard, styles.hostCardSelected] : styles.hostCard}>
-                  <View style={styles.hostTop}>
-                    <View style={styles.rowGap10}>
-                      <Avatar initials={h.initials} color={h.avatarColor} size={42} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.hostName}>
-                          {h.name} <Text style={styles.hostArea}>· {h.city}</Text>
-                        </Text>
-                        <Text style={styles.hostMeta}>
-                          {h.positiveComments} positive refs · {h.languages.slice(0, 2).join(', ')}
-                        </Text>
+          {filteredHosts.length === 0 ? (
+            <Card style={{ padding: 28, alignItems: 'center', gap: 10 }}>
+              <Search size={24} color={colors.muted} />
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.ink }}>
+                Find Members &amp; Hosts
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 18 }}>
+                Search for any BeWelcome member by username or find hosts by typing a city name above.
+              </Text>
+            </Card>
+          ) : (
+            filteredHosts.map((h) => {
+              const selected = h.id === focusedHost?.id;
+              return (
+                <Pressable key={h.id} onPress={() => setFocusedHostId(h.id)}>
+                  <Card style={selected ? [styles.hostCard, styles.hostCardSelected] : styles.hostCard}>
+                    <View style={styles.hostTop}>
+                      <View style={styles.rowGap10}>
+                        <Avatar initials={h.initials} color={h.avatarColor} size={42} uri={h.avatarUrl} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.hostName}>
+                            {h.name} <Text style={styles.hostArea}>· {h.city}</Text>
+                          </Text>
+                          <Text style={styles.hostMeta}>
+                            {h.positiveComments} positive refs · {h.languages.slice(0, 2).join(', ')}
+                          </Text>
+                        </View>
                       </View>
+                      <Badge
+                        label={h.accommodation === 'yes' ? 'Yes' : 'Maybe'}
+                        tone={h.accommodation === 'yes' ? 'green' : 'amber'}
+                      />
                     </View>
-                    <Badge
-                      label={h.accommodation === 'yes' ? 'Yes' : 'Maybe'}
-                      tone={h.accommodation === 'yes' ? 'green' : 'amber'}
-                    />
-                  </View>
 
-                  <Text style={styles.hostBio} numberOfLines={2}>
-                    {h.aboutMe}
-                  </Text>
+                    <Text style={styles.hostBio} numberOfLines={2}>
+                      {h.aboutMe}
+                    </Text>
 
-                  <View style={styles.hostActions}>
-                    <Button
-                      label="View Profile"
-                      variant="outline"
-                      size="sm"
-                      onPress={() => openHostProfile(h)}
-                    />
-                    <Button
-                      label="Request to Stay"
-                      variant="brand"
-                      size="sm"
-                      onPress={() => openRequestForHost(h)}
-                    />
-                  </View>
-                </Card>
-              </Pressable>
-            );
-          })}
+                    <View style={styles.hostActions}>
+                      <Button
+                        label="View Profile"
+                        variant="outline"
+                        size="sm"
+                        onPress={() => openHostProfile(h)}
+                      />
+                      <Button
+                        label="Request to Stay"
+                        variant="brand"
+                        size="sm"
+                        onPress={() => openRequestForHost(h)}
+                      />
+                    </View>
+                  </Card>
+                </Pressable>
+              );
+            })
+          )}
         </View>
 
         {/* Interactive Visual Map Panel */}
@@ -237,7 +249,7 @@ export function ExploreHostsScreen() {
           {focusedHost && (
             <View style={styles.mapPreview}>
               <View style={styles.rowGap10}>
-                <Avatar initials={focusedHost.initials} color={focusedHost.avatarColor} size={38} />
+                <Avatar initials={focusedHost.initials} color={focusedHost.avatarColor} size={38} uri={focusedHost.avatarUrl} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.hostName}>
                     {focusedHost.name} · {focusedHost.city}

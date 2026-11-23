@@ -19,6 +19,7 @@ export interface Member {
   name: string;
   initials: string;
   avatarColor: string;
+  avatarUrl?: string;
   city: string;
   country: string;
   area: string;
@@ -86,6 +87,7 @@ export interface Conversation {
   otherName: string;
   otherInitials: string;
   otherColor: string;
+  otherAvatarUrl?: string;
   otherCity: string;
   dates?: string;
   guests?: number;

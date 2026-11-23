@@ -20,8 +20,18 @@ export function CommunityScreen() {
       <View style={[styles.grid, isDesktop && styles.gridDesktop]}>
         {/* Discussions */}
         <View style={[{ gap: 12 }, isDesktop && { flex: 8 }]}>
-          {threads.map((t) => (
-            <Card key={t.id} style={{ gap: 8 }}>
+          {threads.length === 0 ? (
+            <Card style={{ padding: 32, alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.ink }}>
+                No discussions yet
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center' }}>
+                Join groups to follow community discussions and travel recommendations.
+              </Text>
+            </Card>
+          ) : (
+            threads.map((t) => (
+              <Card key={t.id} style={{ gap: 8 }}>
               <View style={styles.rowBetween}>
                 <Badge label={t.groupName} tone="brand" />
                 <Text style={styles.meta}>
@@ -39,13 +49,19 @@ export function CommunityScreen() {
                 </View>
               </View>
             </Card>
-          ))}
+          ))
+        )}
         </View>
 
         {/* Groups Sidebar */}
         <Card style={[{ gap: 12 }, isDesktop && { flex: 4 }]}>
           <Text style={styles.sectionTitle}>Local &amp; Interest Groups</Text>
-          {groups.map((g) => (
+          {groups.length === 0 ? (
+            <Text style={{ fontSize: 13, color: colors.muted, paddingVertical: 12 }}>
+              No joined groups yet.
+            </Text>
+          ) : (
+            groups.map((g) => (
             <View key={g.id} style={styles.groupRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.groupName}>{g.name}</Text>
@@ -58,7 +74,8 @@ export function CommunityScreen() {
                 onPress={() => toggleGroup(g.id)}
               />
             </View>
-          ))}
+          ))
+        )}
         </Card>
       </View>
     </ScrollView>

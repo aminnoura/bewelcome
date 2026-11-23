@@ -1,16 +1,41 @@
-import React from 'react';
-import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import React, { useState } from 'react';
+import { Image, Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { colors, radii } from '../theme/tokens';
 
 export function Avatar({
   initials,
   color = colors.brand,
   size = 40,
+  uri,
 }: {
   initials: string;
   color?: string;
   size?: number;
+  uri?: string;
 }) {
+  const [loadError, setLoadError] = useState(false);
+
+  if (uri && !loadError) {
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          overflow: 'hidden',
+          backgroundColor: color || colors.surfaceAlt,
+        }}
+      >
+        <Image
+          source={{ uri }}
+          onError={() => setLoadError(true)}
+          style={{ width: size, height: size }}
+          resizeMode="cover"
+        />
+      </View>
+    );
+  }
+
   return (
     <View
       style={{

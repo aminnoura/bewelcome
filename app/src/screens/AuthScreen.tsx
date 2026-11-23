@@ -39,13 +39,11 @@ export function AuthScreen() {
     setError(null);
     if (env === 'prod') {
       setApiBaseUrl(PROD_API_URL);
-      setUsername('');
-      setPassword('');
     } else {
       setApiBaseUrl(LOCAL_API_URL);
-      setUsername('member-3');
-      setPassword('password');
     }
+    setUsername('');
+    setPassword('');
   };
 
   const handleLogin = async () => {
@@ -125,7 +123,7 @@ export function AuthScreen() {
             <TextInput
               value={username}
               onChangeText={setUsername}
-              placeholder="member-3"
+              placeholder="Username or email"
               autoCapitalize="none"
               style={styles.input}
             />
@@ -193,7 +191,7 @@ export function AuthScreen() {
             <Text style={styles.serverHintSub}>
               {serverEnv === 'prod'
                 ? 'Sign in with your real BeWelcome.org account'
-                : 'Local seeded accounts: member-3 / bwadmin · password: password'}
+                : 'Connect to your local BeWelcome development backend'}
             </Text>
           </View>
 

@@ -7,7 +7,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { Calendar, Clock, MapPin, Plus, Search } from 'lucide-react-native';
+import { Calendar, ChevronRight, Clock, Mail, MapPin, Plus, Search } from 'lucide-react-native';
 import { Avatar, Badge, Button, Card, SegmentedTabs } from '../components/UI';
 import { useApp } from '../context/AppContext';
 import { breakpoints, colors, radii } from '../theme/tokens';
@@ -23,16 +23,20 @@ export function HomeDashboardScreen() {
     updateRequestStatus,
     setSelectedConversationId,
     toggleRsvp,
+    visitorsCount,
     hosts,
     openHostProfile,
   } = useApp();
 
-  const [reqTab, setReqTab] = useState<'incoming' | 'outgoing'>('incoming');
+  const [activeWidgetTab, setActiveWidgetTab] = useState<'messages' | 'visitors'>('messages');
+  const [filterMode, setFilterMode] = useState<'all' | 'unread'>('all');
 
   const myTrip = trips.find((t) => t.isMine) || trips[0];
-  const incomingReqs = conversations.filter((c) => c.isRequest && c.direction === 'incoming');
-  const outgoingReqs = conversations.filter((c) => c.isRequest && c.direction === 'outgoing');
-  const visibleReqs = reqTab === 'incoming' ? incomingReqs : outgoingReqs;
+  const incomingReqs = conversations.filter((c) => c.direction === 'incoming');
+  const displayConversations = conversations.filter((c) => {
+    if (filterMode === 'unread') return c.unread;
+    return true;
+  });
   const joinedEvents = activities.filter((a) => a.isGoing);
   const pendingCount = incomingReqs.filter((r) => r.status === 'pending').length;
 
@@ -158,132 +162,168 @@ export function HomeDashboardScreen() {
 
       {/* 2. HOST REQUESTS + 3. EVENTS YOU'RE JOINING */}
       <View style={[styles.twoCol, isDesktop && styles.twoColDesktop]}>
-        {/* Host Requests */}
+        {/* BeWelcome Widget: Messages received & Visitors */}
         <Card style={isDesktop ? { flex: 7 } : undefined}>
           <View style={styles.sectionHeader}>
-            <View style={styles.rowGap8}>
-              <Text style={styles.sectionTitle}>Host Requests</Text>
-              {pendingCount > 0 && <Badge label={`${pendingCount} Pending`} tone="brand" />}
-            </View>
-            <View style={{ width: 175 }}>
-              <SegmentedTabs
-                options={[
-                  { key: 'incoming', label: `Incoming (${incomingReqs.length})` },
-                  { key: 'outgoing', label: `Sent (${outgoingReqs.length})` },
-                ]}
-                value={reqTab}
-                onChange={setReqTab}
-              />
-            </View>
-          </View>
+            <View style={{ flexDirection: 'row', gap: 16 }}>
+              <Pressable
+                onPress={() => setActiveWidgetTab('messages')}
+                style={{
+                  borderBottomWidth: activeWidgetTab === 'messages' ? 2 : 0,
+                  borderBottomColor: colors.brand,
+                  paddingBottom: 6,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontWeight: activeWidgetTab === 'messages' ? '700' : '500',
+                    color: activeWidgetTab === 'messages' ? colors.brand : colors.muted,
+                  }}
+                >
+                  Messages received
+                </Text>
+              </Pressable>
 
-          <View style={{ gap: 12, marginTop: 14 }}>
-            {visibleReqs.length === 0 ? (
-              <View style={{ padding: 24, alignItems: 'center', gap: 6 }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.ink }}>
-                  No {reqTab === 'incoming' ? 'incoming' : 'sent'} requests
+              <Pressable
+                onPress={() => setActiveWidgetTab('visitors')}
+                style={{
+                  borderBottomWidth: activeWidgetTab === 'visitors' ? 2 : 0,
+                  borderBottomColor: colors.brand,
+                  paddingBottom: 6,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontWeight: activeWidgetTab === 'visitors' ? '700' : '500',
+                    color: activeWidgetTab === 'visitors' ? colors.brand : colors.muted,
+                  }}
+                >
+                  Visitors
                 </Text>
-                <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 18 }}>
-                  {reqTab === 'incoming'
-                    ? 'When travelers want to stay in your city, their requests will appear here.'
-                    : "You haven't sent any host requests yet. Find a welcoming host on the map!"}
-                </Text>
-                {reqTab === 'outgoing' && (
-                  <View style={{ marginTop: 8 }}>
-                    <Button
-                      label="Browse Hosts"
-                      variant="outline"
-                      size="sm"
-                      onPress={() => navigate('explore')}
-                    />
-                  </View>
-                )}
+                <View
+                  style={{
+                    backgroundColor: colors.brand,
+                    borderRadius: 10,
+                    paddingHorizontal: 6,
+                    paddingVertical: 1,
+                  }}
+                >
+                  <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '700' }}>
+                    {visitorsCount}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
+
+            {activeWidgetTab === 'messages' && (
+              <View style={{ width: 140 }}>
+                <SegmentedTabs
+                  options={[
+                    { key: 'all', label: 'All' },
+                    { key: 'unread', label: 'Unread' },
+                  ]}
+                  value={filterMode}
+                  onChange={setFilterMode}
+                />
               </View>
-            ) : (
-              visibleReqs.map((req) => {
-                const lastMsg = req.messages[req.messages.length - 1];
-                const statusTone =
-                  req.status === 'accepted'
-                    ? 'green'
-                    : req.status === 'tentative'
-                    ? 'blue'
-                    : req.status === 'declined'
-                    ? 'neutral'
-                    : 'amber';
-                const statusLabel =
-                  req.status === 'accepted'
-                    ? 'Accepted'
-                    : req.status === 'tentative'
-                    ? 'Tentative'
-                    : req.status === 'declined'
-                    ? 'Declined'
-                    : 'Awaiting Reply';
-
-                return (
-                  <View key={req.id} style={styles.reqItem}>
-                    <View style={styles.reqTop}>
-                      <View style={styles.rowGap10}>
-                        <Avatar initials={req.otherInitials} color={req.otherColor} size={38} />
-                        <View>
-                          <Text style={styles.reqName}>
-                            {req.otherName} <Text style={styles.reqCity}>· {req.otherCity}</Text>
-                          </Text>
-                          <View style={styles.rowGap6}>
-                            <Calendar size={12} color={colors.muted} />
-                            <Text style={styles.reqMeta}>
-                              {req.dates} · {req.guests} guest{req.guests === 1 ? '' : 's'}
-                              {req.flexible ? ' · Flexible' : ''}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                      <Badge label={statusLabel} tone={statusTone} />
-                    </View>
-
-                    <Text style={styles.reqBody} numberOfLines={2}>
-                      “{lastMsg?.body}”
-                    </Text>
-
-                    <View style={styles.reqActions}>
-                      {req.direction === 'incoming' && req.status === 'pending' ? (
-                        <>
-                          <Button
-                            label="Accept"
-                            variant="green"
-                            size="sm"
-                            onPress={() => updateRequestStatus(req.id, 'accepted')}
-                          />
-                          <Button
-                            label="Tentative"
-                            variant="outline"
-                            size="sm"
-                            onPress={() => updateRequestStatus(req.id, 'tentative')}
-                          />
-                          <Button
-                            label="Decline"
-                            variant="ghost"
-                            size="sm"
-                            onPress={() => updateRequestStatus(req.id, 'declined')}
-                          />
-                        </>
-                      ) : (
-                        <Button
-                          label="Open Thread"
-                          variant="ink"
-                          size="sm"
-                          onPress={() => {
-                            setSelectedConversationId(req.id);
-                            navigate('messages');
-                          }}
-                        />
-                      )}
-                      <Text style={styles.refsText}>{req.positiveRefs} positive refs</Text>
-                    </View>
-                  </View>
-                );
-              })
             )}
           </View>
+
+          {activeWidgetTab === 'messages' ? (
+            <View style={{ gap: 10, marginTop: 14 }}>
+              {displayConversations.length === 0 ? (
+                <View style={{ padding: 24, alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.ink }}>
+                    No {filterMode === 'unread' ? 'unread' : ''} messages
+                  </Text>
+                  <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center' }}>
+                    Your BeWelcome conversations will appear here.
+                  </Text>
+                </View>
+              ) : (
+                displayConversations.map((req) => {
+                  const lastMsg = req.messages[req.messages.length - 1];
+                  return (
+                    <Pressable
+                      key={req.id}
+                      onPress={() => {
+                        setSelectedConversationId(req.id);
+                        navigate('messages');
+                      }}
+                      style={({ pressed }) => [
+                        styles.reqItem,
+                        pressed && { opacity: 0.8 },
+                        { paddingVertical: 10, paddingHorizontal: 12 },
+                      ]}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <Avatar
+                          initials={req.otherInitials}
+                          color={req.otherColor}
+                          size={44}
+                          uri={req.otherAvatarUrl}
+                        />
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            {req.dates ? (
+                              <View
+                                style={{
+                                  backgroundColor: '#1E293B',
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 2,
+                                  borderRadius: 4,
+                                }}
+                              >
+                                <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '600' }}>
+                                  Request {req.dates}
+                                </Text>
+                              </View>
+                            ) : (
+                              <Badge label="Message" tone="brand" />
+                            )}
+                          </View>
+                          <Text style={{ fontSize: 13, color: colors.ink, lineHeight: 18 }} numberOfLines={1}>
+                            {lastMsg?.body || 'No message content'}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: colors.muted }}>
+                            {req.otherUsername} {req.time}
+                          </Text>
+                        </View>
+                        <ChevronRight size={18} color={colors.muted} />
+                      </View>
+                    </Pressable>
+                  );
+                })
+              )}
+
+              <View style={{ marginTop: 10, alignItems: 'center' }}>
+                <Button
+                  label="Go to conversations"
+                  variant="brand"
+                  onPress={() => navigate('messages')}
+                />
+              </View>
+            </View>
+          ) : (
+            <View style={{ gap: 10, marginTop: 14 }}>
+              <View style={{ padding: 16, backgroundColor: colors.surfaceAlt, borderRadius: radii.md }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.ink }}>
+                  4 travellers visiting your area
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.muted, marginTop: 4 }}>
+                  Members with upcoming travel plans to your city or nearby.
+                </Text>
+              </View>
+              <View style={{ alignItems: 'center', marginTop: 10 }}>
+                <Button label="Explore Hosts &amp; Visitors" variant="outline" onPress={() => navigate('explore')} />
+              </View>
+            </View>
+          )}
         </Card>
 
         {/* Events You're Joining */}

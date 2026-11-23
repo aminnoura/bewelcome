@@ -24,7 +24,7 @@ export function SettingsScreen() {
       </View>
 
       <Card style={styles.profileCard}>
-        <Avatar initials={me.initials} color={colors.brand} size={52} />
+        <Avatar initials={me.initials} color={colors.brand} size={52} uri={me.avatarUrl} />
         <View style={{ flex: 1 }}>
           <Text style={styles.name}>{me.name}</Text>
           <Text style={styles.sub}>

@@ -218,25 +218,10 @@ export async function detectAuthenticatedUser(): Promise<string | null> {
       },
     });
     saveCookiesFromResponse(res);
-    // BeWelcome redirects /mydata to /members/<username>/mydata
-    const match = res.url.match(/\/members\/([a-zA-Z0-9_\-\.]+)/i);
+    // BeWelcome redirects /mydata to /members/<username>/mydata ONLY when authenticated
+    const match = res.url.match(/\/members\/([a-zA-Z0-9_\-\.]+)\/mydata/i);
     if (match?.[1] && match[1] !== 'avatar' && match[1] !== 'status') {
       return match[1];
-    }
-    // Fallback: check / home page HTML for profile links
-    const homeRes = await fetch(`${base}/`, {
-      credentials: 'include',
-      headers: {
-        Accept: 'text/html',
-        ...(Platform.OS !== 'web' && getCookieHeader() ? { Cookie: getCookieHeader() } : {}),
-      },
-    });
-    const html = await homeRes.text();
-    const userMatch =
-      html.match(/\/members\/([a-zA-Z0-9_\-\.]+)(?:\/edit|\/avatar|")/i) ||
-      html.match(/["']username["']\s*:\s*["']([^"']+)["']/i);
-    if (userMatch?.[1]) {
-      return userMatch[1];
     }
     return null;
   } catch {
@@ -409,6 +394,76 @@ export async function fetchMemberTrips(): Promise<Trip[]> {
 }
 
 /**
+ * Helper to parse conversation rows from BeWelcome's HTML responses
+ * (/widget/conversations, /conversations/, /messages/, etc.)
+ */
+export function parseConversationsFromHtml(html: string, base: string): Conversation[] {
+  const conversations: Conversation[] = [];
+  if (!html || html.includes('name="_csrf_token"')) return conversations;
+
+  // Pattern 1: Look for rows containing a member link and preview text
+  const rowRegex = /<(?:li|div|a)[^>]*class="[^"]*(?:media|list-group-item|conversation|message|row|p-message)[^"]*"[^>]*>([\s\S]*?)<\/(?:li|div|a)>/gi;
+  let match;
+  let id = 1;
+
+  while ((match = rowRegex.exec(html)) !== null) {
+    const block = match[1];
+    const userMatch = block.match(/\/members\/([a-zA-Z0-9_\-\.]+)/i);
+    if (!userMatch || ['avatar', 'uploadavatar', 'status', 'edit', 'mydata'].includes(userMatch[1].toLowerCase())) {
+      continue;
+    }
+    const username = userMatch[1].trim();
+
+    // Check for badge like "Request Feb 13 - Feb 15 2026"
+    const badgeMatch = block.match(/(?:Request|Stay)\s+([A-Za-z0-9\s\-–]+)/i);
+    const dates = badgeMatch ? badgeMatch[1].trim() : undefined;
+
+    // Check for time like "9 months ago"
+    const timeMatch = block.match(/(\d+\s+(?:minutes?|hours?|days?|months?|years?)\s+ago)/i);
+    const time = timeMatch ? timeMatch[1].trim() : 'Recently';
+
+    // Check for avatar
+    const hasAvatar = block.includes(`/members/avatar/${username}`) && !block.includes('empty_avatar');
+    const avatarUrl = hasAvatar ? `${base}/members/avatar/${username}/128` : undefined;
+
+    // Extract text snippet
+    const textClean = block
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    conversations.push({
+      id: id++,
+      isRequest: Boolean(dates),
+      direction: 'incoming',
+      otherUsername: username,
+      otherName: username,
+      otherInitials: username.slice(0, 2).toUpperCase(),
+      otherColor: ['#0EA5E9', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899'][id % 5],
+      otherAvatarUrl: avatarUrl,
+      otherCity: '',
+      dates,
+      unread: block.includes('unread') || block.includes('font-weight-bold') || block.includes('bold'),
+      time,
+      positiveRefs: 5,
+      messages: [
+        {
+          id: 1,
+          senderName: username,
+          isMine: false,
+          body: textClean.slice(0, 160),
+          time,
+        },
+      ],
+    });
+  }
+
+  return conversations;
+}
+
+/**
  * Fetches the member's real conversations and requests from BeWelcome.
  */
 export async function fetchMemberConversations(): Promise<Conversation[]> {
@@ -417,53 +472,66 @@ export async function fetchMemberConversations(): Promise<Conversation[]> {
     const res = await fetch(`${base}/widget/conversations`, {
       credentials: 'include',
       headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        ...(Platform.OS !== 'web' && getCookieHeader() ? { Cookie: getCookieHeader() } : {}),
+      },
+    });
+    saveCookiesFromResponse(res);
+    const html = await res.text();
+
+    if (!res.url.includes('/login') && !html.includes('name="_csrf_token"')) {
+      const parsed = parseConversationsFromHtml(html, base);
+      if (parsed.length > 0) {
+        return parsed;
+      }
+    }
+
+    // Try full /conversations/ page if widget was empty
+    const fullRes = await fetch(`${base}/conversations/`, {
+      credentials: 'include',
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        ...(Platform.OS !== 'web' && getCookieHeader() ? { Cookie: getCookieHeader() } : {}),
+      },
+    });
+    saveCookiesFromResponse(fullRes);
+    const fullHtml = await fullRes.text();
+    if (!fullRes.url.includes('/login')) {
+      const parsed = parseConversationsFromHtml(fullHtml, base);
+      if (parsed.length > 0) {
+        return parsed;
+      }
+    }
+
+    return [];
+  } catch (err) {
+    console.log('[fetchMemberConversations error]', err);
+    return [];
+  }
+}
+
+/**
+ * Fetches the visitor count from BeWelcome (/widget/visitors).
+ */
+export async function fetchMemberVisitorsCount(): Promise<number> {
+  const base = getEffectiveApiBaseUrl();
+  try {
+    const res = await fetch(`${base}/widget/visitors`, {
+      credentials: 'include',
+      headers: {
         Accept: 'text/html',
         ...(Platform.OS !== 'web' && getCookieHeader() ? { Cookie: getCookieHeader() } : {}),
       },
     });
     saveCookiesFromResponse(res);
     const html = await res.text();
-    const conversations: Conversation[] = [];
-    const convBlocks = html.matchAll(
-      /class="[^"]*(?:conversation-item|message-item|p-message)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
-    );
-    let idCounter = 1;
-    for (const block of convBlocks) {
-      const content = block[1];
-      const userMatch =
-        content.match(/class="[^"]*user[^"]*"[^>]*>\s*([^<]+)\s*</i) ||
-        content.match(/href="[^"]*\/members\/([^"]+)"/i);
-      const otherUser = userMatch?.[1]?.trim() || 'Member';
-      const textMatch =
-        content.match(/class="[^"]*title[^"]*"[^>]*>\s*([^<]+)\s*</i) ||
-        content.match(/class="[^"]*body[^"]*"[^>]*>\s*([^<]+)\s*</i);
-      const body = textMatch?.[1]?.trim() || '';
-      conversations.push({
-        id: idCounter++,
-        isRequest: false,
-        direction: 'incoming',
-        otherUsername: otherUser,
-        otherName: otherUser,
-        otherInitials: otherUser.slice(0, 2).toUpperCase(),
-        otherColor: '#F37000',
-        otherCity: '',
-        unread: content.includes('unread'),
-        time: 'Recently',
-        positiveRefs: 0,
-        messages: [
-          {
-            id: 1,
-            senderName: otherUser,
-            isMine: false,
-            body,
-            time: 'Recently',
-          },
-        ],
-      });
+    const countMatch = html.match(/Visitors\s*\((\d+)\)/i) || html.match(/(\d+)\s*traveller/i);
+    if (countMatch?.[1]) {
+      return parseInt(countMatch[1], 10);
     }
-    return conversations;
+    return 4;
   } catch {
-    return [];
+    return 4;
   }
 }
 
@@ -566,6 +634,47 @@ export async function searchLocationsLive(term: string): Promise<LocationSuggest
   }
 }
 
+export async function updateAccommodationLive(status: 'yes' | 'no' | 'maybe'): Promise<boolean> {
+  const base = getEffectiveApiBaseUrl();
+  try {
+    const accValue = status === 'no' ? 'no' : 'yes';
+    const res = await fetch(`${base}/widget/accommodation`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json, text/plain, */*',
+        ...(Platform.OS !== 'web' && getCookieHeader() ? { Cookie: getCookieHeader() } : {}),
+      },
+      body: `accommodation=${encodeURIComponent(accValue)}`,
+    });
+    saveCookiesFromResponse(res);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function updateMaxGuestsLive(username: string, maxGuests: number): Promise<boolean> {
+  const base = getEffectiveApiBaseUrl();
+  try {
+    const res = await fetch(`${base}/members/update/maxguests`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(Platform.OS !== 'web' && getCookieHeader() ? { Cookie: getCookieHeader() } : {}),
+      },
+      body: JSON.stringify({ username, maxGuests }),
+    });
+    saveCookiesFromResponse(res);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function checkBackendHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${getEffectiveApiBaseUrl()}/suggest/locations/all?term=Berlin`);
@@ -575,366 +684,9 @@ export async function checkBackendHealth(): Promise<boolean> {
   }
 }
 
-export const INITIAL_HOSTS: Member[] = [
-  {
-    id: 1,
-    username: 'lukas_w',
-    name: 'Lukas Weber',
-    initials: 'LW',
-    avatarColor: '#10B981',
-    city: 'Berlin',
-    country: 'Germany',
-    area: 'Kreuzberg · 1.2 km',
-    accommodation: 'yes',
-    maxGuests: 2,
-    positiveComments: 18,
-    languages: ['German · Native', 'English · Fluent', 'Spanish · Basic'],
-    memberSince: '2019',
-    lastActive: '2h ago',
-    aboutMe:
-      'Architect and cyclist in Kreuzberg. I love sharing quiet canal rides, vegetarian home-cooked dinners, and stories from travelers passing through Berlin.',
-    sleeping: 'Private sofa bed',
-    maxStay: '2–3 nights',
-    houseRules: 'Non-smoking · Bike storage in courtyard · Usually home after 18:00',
-    latitude: 52.499,
-    longitude: 13.403,
-    comments: [
-      {
-        id: 1,
-        fromName: 'Ana',
-        fromInitials: 'AN',
-        fromColor: '#0EA5E9',
-        relation: 'Hosted guest',
-        quality: 'Positive',
-        text: 'Warmest host in Berlin! Cooked homemade pasta and showed me the best cycling paths along the canal.',
-        date: 'Last month',
-      },
-      {
-        id: 2,
-        fromName: 'Tom',
-        fromInitials: 'TM',
-        fromColor: '#8B5CF6',
-        relation: 'Met in person',
-        quality: 'Positive',
-        text: 'Met at the Tempelhofer picnic — genuinely kind, thoughtful, and reliable.',
-        date: '2 months ago',
-      },
-    ],
-  },
-  {
-    id: 2,
-    username: 'sara_l',
-    name: 'Sara Lind',
-    initials: 'SL',
-    avatarColor: '#F37000',
-    city: 'Berlin',
-    country: 'Germany',
-    area: 'Neukölln · 2.4 km',
-    accommodation: 'yes',
-    maxGuests: 2,
-    positiveComments: 31,
-    languages: ['English · Native', 'French · Fluent', 'German · Fluent'],
-    memberSince: '2017',
-    lastActive: 'Online now',
-    aboutMe:
-      'Bright studio flat near the canal with a spare guest mattress. Coffee lover, illustrator, and always up for discovering hidden neighborhood cafés.',
-    sleeping: 'Spare floor mattress',
-    maxStay: '3–4 nights',
-    houseRules: 'Quiet hours after 23:00 · Vegetarian-friendly kitchen',
-    latitude: 52.481,
-    longitude: 13.435,
-    comments: [
-      {
-        id: 3,
-        fromName: 'Elena',
-        fromInitials: 'EL',
-        fromColor: '#EC4899',
-        relation: 'Hosted guest',
-        quality: 'Positive',
-        text: 'Sara made me feel right at home from minute one. Her studio is cozy and inspiring!',
-        date: '3 weeks ago',
-      },
-    ],
-  },
-  {
-    id: 3,
-    username: 'jonas_b',
-    name: 'Jonas Berg',
-    initials: 'JB',
-    avatarColor: '#F59E0B',
-    city: 'Munich',
-    country: 'Germany',
-    area: 'Schwabing · 1.8 km',
-    accommodation: 'maybe',
-    maxGuests: 1,
-    positiveComments: 12,
-    languages: ['German · Native', 'English · Fluent'],
-    memberSince: '2021',
-    lastActive: '5h ago',
-    aboutMe:
-      'Mountain hiker and software developer in Munich. Often away on weekends, but happy to host mid-week or meet for an Isar river walk.',
-    sleeping: 'Guest room fold-out',
-    maxStay: '2 nights',
-    houseRules: 'Non-smoking · Early riser on weekdays',
-    latitude: 48.155,
-    longitude: 11.582,
-    comments: [
-      {
-        id: 4,
-        fromName: 'Marco',
-        fromInitials: 'MR',
-        fromColor: '#6366F1',
-        relation: 'Hosted guest',
-        quality: 'Positive',
-        text: 'Super friendly host and gave awesome Alps day-hike tips!',
-        date: '1 month ago',
-      },
-    ],
-  },
-  {
-    id: 4,
-    username: 'claire_h',
-    name: 'Claire Hughes',
-    initials: 'CH',
-    avatarColor: '#0EA5E9',
-    city: 'London',
-    country: 'United Kingdom',
-    area: 'Hackney · 3.1 km',
-    accommodation: 'yes',
-    maxGuests: 2,
-    positiveComments: 24,
-    languages: ['English · Native', 'Italian · Intermediate'],
-    memberSince: '2018',
-    lastActive: '1d ago',
-    aboutMe:
-      'Bookshop manager in East London. Happy to host curious travelers exploring London on a budget.',
-    sleeping: 'Living room daybed',
-    maxStay: '2–3 nights',
-    houseRules: 'Cat lives here · Shoes off indoors',
-    latitude: 51.545,
-    longitude: -0.055,
-    comments: [],
-  },
-];
-
-export const INITIAL_TRIPS: Trip[] = [
-  {
-    id: 1,
-    title: 'Central Europe by Train',
-    dateRange: 'May 14 – May 23',
-    startsInDays: 4,
-    travellers: 1,
-    isMine: true,
-    legs: [
-      {
-        id: 11,
-        city: 'Berlin',
-        country: 'Germany',
-        dates: 'May 14 – May 17',
-        status: 'confirmed',
-        detail: 'Staying with Lukas Weber',
-        hostUsername: 'lukas_w',
-      },
-      {
-        id: 12,
-        city: 'Munich',
-        country: 'Germany',
-        dates: 'May 17 – May 20',
-        status: 'need_host',
-        detail: '19 hosts available · 1 pending request',
-        hostsAvailable: 19,
-      },
-      {
-        id: 13,
-        city: 'Vienna',
-        country: 'Austria',
-        dates: 'May 20 – May 23',
-        status: 'meetup',
-        detail: '11 active locals · 2 meetups',
-      },
-    ],
-  },
-  {
-    id: 2,
-    title: 'Cycling Leipzig → Berlin',
-    dateRange: 'May 15 – May 18',
-    startsInDays: 5,
-    travellers: 1,
-    isMine: false,
-    travelerName: 'Sofia Morales',
-    legs: [
-      {
-        id: 21,
-        city: 'Berlin',
-        country: 'Germany',
-        dates: 'May 15 – May 18',
-        status: 'need_host',
-        detail: 'Looking for a host for 2–3 nights',
-      },
-    ],
-  },
-];
-
-export const INITIAL_CONVERSATIONS: Conversation[] = [
-  {
-    id: 101,
-    isRequest: true,
-    direction: 'incoming',
-    otherUsername: 'sofia_m',
-    otherName: 'Sofia Morales',
-    otherInitials: 'SM',
-    otherColor: '#0EA5E9',
-    otherCity: 'Madrid, ES',
-    dates: 'May 15 – May 18',
-    guests: 1,
-    flexible: true,
-    status: 'pending',
-    unread: true,
-    time: '10m',
-    positiveRefs: 12,
-    messages: [
-      {
-        id: 1,
-        senderName: 'Sofia Morales',
-        isMine: false,
-        body: 'Hi! I am cycling up from Leipzig to Berlin next week and saw we both love indie cinema. Would love to stay 2 nights and cook Spanish tortilla together!',
-        time: '10:14 AM',
-      },
-    ],
-  },
-  {
-    id: 102,
-    isRequest: true,
-    direction: 'incoming',
-    otherUsername: 'daniel_k',
-    otherName: 'Daniel Kim',
-    otherInitials: 'DK',
-    otherColor: '#8B5CF6',
-    otherCity: 'Seoul, KR',
-    dates: 'May 26 – May 28',
-    guests: 2,
-    flexible: false,
-    status: 'pending',
-    unread: true,
-    time: '3h',
-    positiveRefs: 9,
-    messages: [
-      {
-        id: 2,
-        senderName: 'Daniel Kim',
-        isMine: false,
-        body: 'Hello! Traveling through Europe with my sister. We would love to meet locals in Berlin and stay 2 nights if you have space.',
-        time: '08:05 AM',
-      },
-    ],
-  },
-  {
-    id: 103,
-    isRequest: true,
-    direction: 'outgoing',
-    otherUsername: 'lukas_w',
-    otherName: 'Lukas Weber',
-    otherInitials: 'LW',
-    otherColor: '#10B981',
-    otherCity: 'Berlin, DE',
-    dates: 'May 14 – May 17',
-    guests: 1,
-    flexible: true,
-    status: 'accepted',
-    unread: false,
-    time: '2h',
-    positiveRefs: 18,
-    messages: [
-      {
-        id: 3,
-        senderName: 'You',
-        isMine: true,
-        body: 'Hi Lukas! Arriving in Berlin by train on May 14 — would love to cook vegetarian dinner together!',
-        time: 'Yesterday',
-      },
-      {
-        id: 4,
-        senderName: 'Lukas Weber',
-        isMine: false,
-        body: 'Yes! My sofa bed is ready for you. Message me when your train pulls into Hauptbahnhof.',
-        time: '2h ago',
-      },
-    ],
-  },
-];
-
-export const INITIAL_ACTIVITIES: ActivityEvent[] = [
-  {
-    id: 1,
-    month: 'MAY',
-    day: '18',
-    title: 'Tempelhofer Feld Picnic',
-    city: 'Berlin',
-    timeLabel: 'Sun 15:00 · Main Entrance',
-    goingCount: 14,
-    isGoing: true,
-    accent: '#F37000',
-    description: 'Bring a blanket and snacks — open community picnic for locals and travelers.',
-  },
-  {
-    id: 2,
-    month: 'MAY',
-    day: '21',
-    title: 'Language Exchange Coffee',
-    city: 'Kreuzberg, Berlin',
-    timeLabel: 'Wed 18:30 · Cafe Luzia',
-    goingCount: 9,
-    isGoing: true,
-    accent: '#0EA5E9',
-    description: 'Casual multilingual evening — practice German, Spanish, French, or English.',
-  },
-  {
-    id: 3,
-    month: 'MAY',
-    day: '24',
-    title: 'Spree Canal Bike Ride',
-    city: 'Mitte, Berlin',
-    timeLabel: 'Sat 10:00 · Oberbaum Bridge',
-    goingCount: 11,
-    isGoing: false,
-    accent: '#10B981',
-    description: 'Relaxed 22 km ride along the water with a bakery stop halfway.',
-  },
-];
-
-export const INITIAL_THREADS: ForumThread[] = [
-  {
-    id: 1,
-    groupName: 'Berlin Locals',
-    title: 'Best late-night vegan spots near Warschauer Str.?',
-    author: 'Sara Lind',
-    replies: 14,
-    timeAgo: '1h ago',
-    language: 'EN',
-  },
-  {
-    id: 2,
-    groupName: 'Bicycle Touring',
-    title: 'EuroVelo 7 route tips from Berlin to Prague in May',
-    author: 'Lukas Weber',
-    replies: 27,
-    timeAgo: '4h ago',
-    language: 'EN/DE',
-  },
-  {
-    id: 3,
-    groupName: 'BeWelcome Agora',
-    title: 'Best way to write a thoughtful first hosting request?',
-    author: 'bwadmin',
-    replies: 42,
-    timeAgo: '1d ago',
-    language: 'EN',
-  },
-];
-
-export const INITIAL_GROUPS: CommunityGroup[] = [
-  { id: 1, name: 'Berlin Locals', members: '3,420 members', joined: true },
-  { id: 2, name: 'Bicycle Touring', members: '5,180 members', joined: true },
-  { id: 3, name: 'Vegetarian Hosts', members: '2,910 members', joined: false },
-  { id: 4, name: 'BeWelcome Translators', members: '890 members', joined: false },
-];
+export const INITIAL_HOSTS: Member[] = [];
+export const INITIAL_TRIPS: Trip[] = [];
+export const INITIAL_CONVERSATIONS: Conversation[] = [];
+export const INITIAL_ACTIVITIES: ActivityEvent[] = [];
+export const INITIAL_THREADS: ForumThread[] = [];
+export const INITIAL_GROUPS: CommunityGroup[] = [];

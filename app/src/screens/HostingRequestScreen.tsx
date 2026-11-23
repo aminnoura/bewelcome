@@ -24,8 +24,28 @@ export function HostingRequestScreen() {
   const [guests, setGuests] = useState(1);
   const [flexible, setFlexible] = useState(true);
   const [message, setMessage] = useState(
-    `Hi ${host.name.split(' ')[0]}! I'm passing through ${host.city} on my spring trip and would love to stay a couple nights and cook dinner together if you're free.`
+    host
+      ? `Hi ${host.name.split(' ')[0]}! I'm passing through ${host.city} on my trip and would love to stay a couple nights and cook dinner together if you're free.`
+      : ''
   );
+
+  if (!host) {
+    return (
+      <ScrollView contentContainerStyle={[styles.scroll, isDesktop && styles.scrollDesktop]}>
+        <Pressable onPress={() => navigate('explore')} style={styles.backRow}>
+          <ArrowLeft size={16} color={colors.ink} />
+          <Text style={styles.backText}>Back to Hosts</Text>
+        </Pressable>
+        <Card style={{ padding: 32, alignItems: 'center', gap: 10 }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.ink }}>No Host Selected</Text>
+          <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center' }}>
+            Please select a host first before sending a hosting request.
+          </Text>
+          <Button label="Find Hosts" onPress={() => navigate('explore')} />
+        </Card>
+      </ScrollView>
+    );
+  }
 
   const handleSend = () => {
     if (!message.trim()) return;
@@ -114,7 +134,7 @@ export function HostingRequestScreen() {
         {/* Host Rules Reminder */}
         <Card style={[{ gap: 14 }, isDesktop && { flex: 5 }]}>
           <View style={styles.hostRow}>
-            <Avatar initials={host.initials} color={host.avatarColor} size={44} />
+            <Avatar initials={host.initials} color={host.avatarColor} size={44} uri={host.avatarUrl} />
             <View style={{ flex: 1 }}>
               <Text style={styles.rowTitle}>{host.name}</Text>
               <Text style={styles.rowSub}>

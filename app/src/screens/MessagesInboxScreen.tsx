@@ -58,44 +58,55 @@ export function MessagesInboxScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 12, gap: 8 }}>
-        {filtered.map((c) => {
-          const isSel = c.id === activeConv?.id;
-          const lastMsg = c.messages[c.messages.length - 1];
-          const tone =
-            c.status === 'accepted'
-              ? 'green'
-              : c.status === 'tentative'
-              ? 'blue'
-              : c.status === 'declined'
-              ? 'neutral'
-              : 'amber';
-          return (
-            <Pressable
-              key={c.id}
-              onPress={() => {
-                setSelectedConversationId(c.id);
-                if (!isDesktop) setMobileShowThread(true);
-              }}
-              style={[styles.convRow, isSel && isDesktop && styles.convRowActive]}
-            >
-              <Avatar initials={c.otherInitials} color={c.otherColor} size={40} />
-              <View style={{ flex: 1, gap: 3 }}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.convName}>{c.otherName}</Text>
-                  <Text style={styles.convTime}>{c.time}</Text>
+        {filtered.length === 0 ? (
+          <View style={{ padding: 24, alignItems: 'center', gap: 6 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: colors.ink }}>
+              No messages found
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center' }}>
+              Your inbox is clear. Messages and stay requests will appear here.
+            </Text>
+          </View>
+        ) : (
+          filtered.map((c) => {
+            const isSel = c.id === activeConv?.id;
+            const lastMsg = c.messages[c.messages.length - 1];
+            const tone =
+              c.status === 'accepted'
+                ? 'green'
+                : c.status === 'tentative'
+                ? 'blue'
+                : c.status === 'declined'
+                ? 'neutral'
+                : 'amber';
+            return (
+              <Pressable
+                key={c.id}
+                onPress={() => {
+                  setSelectedConversationId(c.id);
+                  if (!isDesktop) setMobileShowThread(true);
+                }}
+                style={[styles.convRow, isSel && isDesktop && styles.convRowActive]}
+              >
+                <Avatar initials={c.otherInitials} color={c.otherColor} size={40} uri={c.otherAvatarUrl} />
+                <View style={{ flex: 1, gap: 3 }}>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.convName}>{c.otherName}</Text>
+                    <Text style={styles.convTime}>{c.time}</Text>
+                  </View>
+                  <Text style={styles.convPreview} numberOfLines={1}>
+                    {c.dates ? `${c.dates} · ` : ''}
+                    {lastMsg?.body}
+                  </Text>
+                  <View style={styles.rowBetween}>
+                    {c.status ? <Badge label={c.status.toUpperCase()} tone={tone} /> : <View />}
+                    {c.unread && <View style={styles.unreadDot} />}
+                  </View>
                 </View>
-                <Text style={styles.convPreview} numberOfLines={1}>
-                  {c.dates ? `${c.dates} · ` : ''}
-                  {lastMsg?.body}
-                </Text>
-                <View style={styles.rowBetween}>
-                  {c.status ? <Badge label={c.status.toUpperCase()} tone={tone} /> : <View />}
-                  {c.unread && <View style={styles.unreadDot} />}
-                </View>
-              </View>
-            </Pressable>
-          );
-        })}
+              </Pressable>
+            );
+          })
+        )}
       </ScrollView>
     </View>
   );
@@ -111,7 +122,7 @@ export function MessagesInboxScreen() {
                 <ArrowLeft size={18} color={colors.ink} />
               </Pressable>
             )}
-            <Avatar initials={activeConv.otherInitials} color={activeConv.otherColor} size={38} />
+            <Avatar initials={activeConv.otherInitials} color={activeConv.otherColor} size={38} uri={activeConv.otherAvatarUrl} />
             <View style={{ flex: 1 }}>
               <Text style={styles.convName}>{activeConv.otherName}</Text>
               <Text style={styles.threadSub}>
