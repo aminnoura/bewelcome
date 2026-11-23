@@ -150,6 +150,9 @@ export function ResponsiveShell({ children }: { children: React.ReactNode }) {
             <Bell size={17} color={colors.ink} />
             {unreadCount > 0 && <View style={styles.bellDot} />}
           </Pressable>
+          <Pressable onPress={() => navigate('settings')} style={{ marginLeft: 2 }}>
+            <Avatar initials={me.initials} color={colors.brand} size={28} uri={me.avatarUrl} />
+          </Pressable>
         </View>
       </View>
 

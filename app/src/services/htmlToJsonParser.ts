@@ -2,6 +2,7 @@ import { parse } from 'node-html-parser';
 import {
   ActivityEvent,
   ChatMessage,
+  CommunityGroup,
   Conversation,
   ForumThread,
   HostingStatus,
@@ -346,26 +347,74 @@ export function parseActivitiesWidget(html: string): ActivityEvent[] {
 }
 
 /**
- * Parses group threads from BeWelcome HTML (/widget/threads)
+ * Parses forum and group threads from BeWelcome HTML (/forums/bwforum, /forums, or /widget/threads)
  */
 export function parseThreadsWidget(html: string): ForumThread[] {
-  if (!html || (html.includes('name="_csrf_token"') && !html.includes('c-dashboard'))) return [];
+  if (!html) return [];
   const root = parse(html);
-  const items = root.querySelectorAll('.c-dashboard__item');
   const threads: ForumThread[] = [];
 
+  // Format 1: Standard BeWelcome forum table (from /groups/forums, /forums/bwforum or /forums)
+  const rows = root.querySelectorAll('tr');
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const threadLink = row.querySelector('a[href*="/s"], a[href*="forum/s"], a[href*="forums/s"]');
+    if (!threadLink) continue;
+
+    const title = cleanText(threadLink.textContent);
+    if (!title || (title.toLowerCase().includes('bewelcome') && title.length < 15)) continue;
+
+    const href = threadLink.getAttribute('href') || '';
+    const idMatch = href.match(/\/s(\d+)/i) || href.match(/thread\/(\d+)/i);
+    const id = idMatch ? parseInt(idMatch[1], 10) : i + 1;
+
+    // Group Name
+    const groupLink = row.querySelector('a[href*="group/"]');
+    const groupName = cleanText(groupLink?.textContent).replace(/^Group:\s*/i, '') || 'BeWelcome Forum';
+
+    // Author
+    const authorEl = row.querySelector('th small') || row.querySelector('th a');
+    const author = cleanText(authorEl?.textContent) || 'Community Member';
+
+    // Replies count: 2nd <td>
+    const tds = row.querySelectorAll('td');
+    let replies = 1;
+    if (tds.length >= 2) {
+      const parsedReplies = parseInt(cleanText(tds[1].textContent), 10);
+      if (!isNaN(parsedReplies)) replies = parsedReplies;
+    }
+
+    // Relative time
+    const timeEl = row.querySelector('span.gray a') || row.querySelector('span.gray') || row.querySelector('.text-nowrap small');
+    const timeAgo = cleanText(timeEl?.textContent) || 'Recently';
+
+    threads.push({
+      id,
+      groupName,
+      title,
+      author,
+      replies,
+      timeAgo,
+      language: 'EN',
+    });
+  }
+
+  if (threads.length > 0) return threads;
+
+  // Format 2: Dashboard widget items (.c-dashboard__item)
+  const items = root.querySelectorAll('.c-dashboard__item');
   items.forEach((item, index) => {
     const link = item.querySelector('a[href*="thread/"]') || item.querySelector('strong a') || item.querySelector('a');
     if (!link) return;
     const title = cleanText(link.textContent);
-    if (!title || title.toLowerCase().includes('bewelcome')) return;
+    if (!title || (title.toLowerCase().includes('bewelcome') && title.length < 15)) return;
 
     const href = link.getAttribute('href') || '';
-    const idMatch = href.match(/thread\/(\d+)/i);
+    const idMatch = href.match(/thread\/(\d+)/i) || href.match(/forums\/s(\d+)/i) || href.match(/\/s(\d+)/i);
     const id = idMatch ? parseInt(idMatch[1], 10) : index + 1;
 
     const groupLink = item.querySelector('a[href*="group/"]');
-    const groupName = cleanText(groupLink?.textContent) || 'Community Agora';
+    const groupName = cleanText(groupLink?.textContent).replace(/^Group:\s*/i, '') || 'Community Agora';
 
     const authorLink = item.querySelector('a[href*="members/"]');
     const author = cleanText(authorLink?.textContent) || 'Member';
@@ -382,6 +431,34 @@ export function parseThreadsWidget(html: string): ForumThread[] {
   });
 
   return threads;
+}
+
+/**
+ * Parses community groups from BeWelcome forums (/groups/forums)
+ */
+export function parseGroupsFromForums(html: string): CommunityGroup[] {
+  if (!html) return [];
+  const root = parse(html);
+  const groupLinks = root.querySelectorAll('a[href*="group/"]');
+  const groupMap = new Map<number, CommunityGroup>();
+
+  groupLinks.forEach((link) => {
+    const href = link.getAttribute('href') || '';
+    const match = href.match(/group\/(\d+)/i);
+    if (!match) return;
+    const id = parseInt(match[1], 10);
+    const name = cleanText(link.textContent).replace(/^Group:\s*/i, '');
+    if (name && !groupMap.has(id) && !name.toLowerCase().includes('bewelcome') && name.length > 2) {
+      groupMap.set(id, {
+        id,
+        name,
+        members: 'Active Members',
+        joined: false,
+      });
+    }
+  });
+
+  return Array.from(groupMap.values());
 }
 
 /**

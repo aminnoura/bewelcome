@@ -5,6 +5,7 @@ import {
   parseMemberProfileHtml,
   parseActivitiesWidget,
   parseThreadsWidget,
+  parseGroupsFromForums,
   parseConversationThreadMessages,
 } from '../services/htmlToJsonParser';
 import {
@@ -459,11 +460,29 @@ export async function fetchMemberActivities(): Promise<ActivityEvent[]> {
 }
 
 /**
- * Fetches the member's group threads from BeWelcome (/widget/threads).
+ * Fetches the community forum threads from BeWelcome (/forums/bwforum with fallback to /widget/threads).
  */
 export async function fetchMemberThreads(): Promise<ForumThread[]> {
   const base = getEffectiveApiBaseUrl();
   try {
+    // 1. Try public BeWelcome Forum threads (/forums/bwforum)
+    const forumRes = await fetch(`${base}/forums/bwforum`, {
+      credentials: 'include',
+      headers: {
+        Accept: 'text/html',
+        ...(Platform.OS !== 'web' && getCookieHeader() ? { Cookie: getCookieHeader() } : {}),
+      },
+    });
+    saveCookiesFromResponse(forumRes);
+    if (forumRes.ok) {
+      const html = await forumRes.text();
+      const parsed = parseThreadsWidget(html);
+      if (parsed.length > 0) {
+        return parsed;
+      }
+    }
+
+    // 2. Fallback to /widget/threads
     const res = await fetch(`${base}/widget/threads`, {
       credentials: 'include',
       headers: {
@@ -472,8 +491,35 @@ export async function fetchMemberThreads(): Promise<ForumThread[]> {
       },
     });
     saveCookiesFromResponse(res);
-    const html = await res.text();
-    return parseThreadsWidget(html);
+    if (res.ok) {
+      const html = await res.text();
+      return parseThreadsWidget(html);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetches real community groups from BeWelcome (/groups/forums).
+ */
+export async function fetchMemberGroups(): Promise<CommunityGroup[]> {
+  const base = getEffectiveApiBaseUrl();
+  try {
+    const res = await fetch(`${base}/groups/forums`, {
+      credentials: 'include',
+      headers: {
+        Accept: 'text/html',
+        ...(Platform.OS !== 'web' && getCookieHeader() ? { Cookie: getCookieHeader() } : {}),
+      },
+    });
+    saveCookiesFromResponse(res);
+    if (res.ok) {
+      const html = await res.text();
+      return parseGroupsFromForums(html);
+    }
+    return [];
   } catch {
     return [];
   }

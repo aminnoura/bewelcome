@@ -16,6 +16,7 @@ import {
   fetchConversationThread,
   fetchMemberActivities,
   fetchMemberConversations,
+  fetchMemberGroups,
   fetchMemberThreads,
   fetchMemberTrips,
   fetchMemberVisitors,
@@ -142,14 +143,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         pushEnabled: true,
       });
 
-      // Load user's real trips, visitors, messages, visitors count, and activities
+      // Load user's real trips, visitors, messages, visitors count, activities, threads, and groups
       fetchMemberVisitorsCount().then(setVisitorsCount).catch(() => {});
-      const [realTrips, realVisitors, realConversations, realActivities, realThreads] = await Promise.all([
+      const [realTrips, realVisitors, realConversations, realActivities, realThreads, realGroups] = await Promise.all([
         fetchMemberTrips(),
         fetchMemberVisitors(),
         fetchMemberConversations(),
         fetchMemberActivities(),
         fetchMemberThreads(),
+        fetchMemberGroups(),
       ]);
 
       const allTrips = realTrips.length > 0 ? [...realTrips, ...realVisitors] : realVisitors;
@@ -162,6 +164,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       setActivities(realActivities);
       setThreads(realThreads);
+      if (realGroups.length > 0) {
+        setGroups(realGroups);
+      }
 
       // Populate hosts list with real active community members discovered from visitors & conversations
       const memberUsernames = new Set<string>();

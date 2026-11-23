@@ -30,7 +30,13 @@ config.server.enhanceMiddleware = (middleware, server) => {
       const targetBase = isBwProxy ? 'https://bewelcome.org' : 'http://localhost';
       const isHttps = isBwProxy;
 
-      const targetPath = req.url.replace(new RegExp('^' + proxyPrefix), '') || '/';
+      // BeWelcome's /widget/threads endpoint crashes with HTTP 500 on bewelcome.org
+      // when a member has uninitialized forum preferences. Seamlessly alias to
+      // /groups/forums which contains the live community discussion threads.
+      let targetPath = req.url.replace(new RegExp('^' + proxyPrefix), '') || '/';
+      if (isBwProxy && targetPath === '/widget/threads') {
+        targetPath = '/groups/forums';
+      }
       const targetUrl = new URL(targetPath, targetBase);
 
       const headers = { ...req.headers };
