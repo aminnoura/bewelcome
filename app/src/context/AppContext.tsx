@@ -16,6 +16,7 @@ import {
   fetchMemberActivities,
   fetchMemberConversations,
   fetchMemberTrips,
+  fetchMemberVisitors,
   fetchMemberVisitorsCount,
   fetchRealUserProfile,
   LoginResult,
@@ -137,15 +138,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         pushEnabled: true,
       });
 
-      // Load user's real trips, messages, visitors count, and activities
+      // Load user's real trips, visitors, messages, visitors count, and activities
       fetchMemberVisitorsCount().then(setVisitorsCount).catch(() => {});
-      const [realTrips, realConversations, realActivities] = await Promise.all([
+      const [realTrips, realVisitors, realConversations, realActivities] = await Promise.all([
         fetchMemberTrips(),
+        fetchMemberVisitors(),
         fetchMemberConversations(),
         fetchMemberActivities(),
       ]);
 
-      setTrips(realTrips);
+      const allTrips = realTrips.length > 0 ? [...realTrips, ...realVisitors] : realVisitors;
+      setTrips(allTrips);
       setConversations(realConversations);
       if (realConversations.length > 0) {
         setSelectedConversationId(realConversations[0].id);

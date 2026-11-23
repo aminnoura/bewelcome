@@ -1,5 +1,10 @@
 import { Platform } from 'react-native';
 import {
+  parseConversationsWidget,
+  parseVisitorsWidget,
+  parseMemberProfileHtml,
+} from '../services/htmlToJsonParser';
+import {
   ActivityEvent,
   CommunityGroup,
   Conversation,
@@ -247,14 +252,6 @@ export interface RealUserProfile {
  */
 export async function fetchRealUserProfile(username: string): Promise<RealUserProfile> {
   const base = getEffectiveApiBaseUrl();
-  let name = username;
-  let city = '';
-  let country = '';
-  let accommodation: HostingStatus = 'maybe';
-  let maxGuests = 2;
-  let aboutMe = '';
-  const languages: string[] = [];
-  let memberSince = '2024';
 
   try {
     const res = await fetch(`${base}/members/${username}`, {
@@ -266,87 +263,35 @@ export async function fetchRealUserProfile(username: string): Promise<RealUserPr
     });
     saveCookiesFromResponse(res);
     const html = await res.text();
+    const parsed = parseMemberProfileHtml(html, username, base);
 
-    // Extract visible name
-    const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-    if (titleMatch?.[1]) {
-      const titleClean = titleMatch[1].split('|')[0].trim();
-      const parensMatch = titleClean.match(/^([^(]+)\s*\([^)]+\)/);
-      if (parensMatch?.[1]) {
-        name = parensMatch[1].trim();
-      } else if (
-        titleClean &&
-        !titleClean.toLowerCase().includes('log in') &&
-        !titleClean.toLowerCase().includes('bewelcome')
-      ) {
-        name = titleClean;
-      }
-    }
-    const h1Match = html.match(/<h1[^>]*>\s*([^<]+)\s*<\/h1>/i);
-    if (h1Match?.[1] && h1Match[1].trim().length > 1 && !h1Match[1].toLowerCase().includes('error')) {
-      name = h1Match[1].trim();
-    }
-
-    // Extract location
-    const locMatch =
-      html.match(/href="[^"]*\/search\/location[^"]*"[^>]*>\s*([^<]+)\s*<\/a>/i) ||
-      html.match(/class="[^"]*(?:location|city|country)[^"]*"[^>]*>\s*([^<]{2,100})\s*</i);
-    if (locMatch?.[1]) {
-      const parts = locMatch[1].split(/[#,]/).map((s) => s.trim()).filter(Boolean);
-      city = parts[0] || '';
-      country = parts[parts.length - 1] || '';
-    }
-
-    // Extract accommodation
-    if (
-      /Accommodation:\s*Yes/i.test(html) ||
-      /class="[^"]*accommodation-yes/i.test(html) ||
-      /Accepting Guests/i.test(html)
-    ) {
-      accommodation = 'yes';
-    } else if (
-      /Accommodation:\s*No/i.test(html) ||
-      /Not offering/i.test(html) ||
-      /Cannot host/i.test(html)
-    ) {
-      accommodation = 'no';
-    }
-
-    // Extract max guests
-    const guestMatch = html.match(/Max(?:imum)?\s*guests?:\s*(\d+)/i) || html.match(/(\d+)\s*guests?/i);
-    if (guestMatch?.[1]) {
-      maxGuests = parseInt(guestMatch[1], 10) || 2;
-    }
-
-    // Extract about me
-    const aboutMatch = html.match(
-      /class="[^"]*(?:profile__about|about-me|p-profile__description)[^"]*"[^>]*>([\s\S]*?)<\/div>/i
-    );
-    if (aboutMatch?.[1]) {
-      aboutMe = aboutMatch[1].replace(/<[^>]+>/g, '').trim();
-    }
-
-    // Extract member since
-    const sinceMatch = html.match(/Member since:\s*([A-Za-z0-9\s,]+)/i) || html.match(/since\s+(\d{4})/i);
-    if (sinceMatch?.[1]) {
-      memberSince = sinceMatch[1].trim();
-    }
+    return {
+      username,
+      name: parsed.name || username,
+      city: parsed.city || 'Berlin',
+      country: parsed.country || 'Germany',
+      accommodation: parsed.accommodation || 'maybe',
+      maxGuests: parsed.maxGuests || 2,
+      aboutMe: parsed.aboutMe || '',
+      languages: parsed.languages || ['English · Fluent'],
+      memberSince: parsed.memberSince || '2024',
+      avatarUrl: `${base}/members/avatar/${username}/128`,
+    };
   } catch (err) {
     console.log('[fetchRealUserProfile error]', err);
+    return {
+      username,
+      name: username,
+      city: 'Berlin',
+      country: 'Germany',
+      accommodation: 'maybe',
+      maxGuests: 2,
+      aboutMe: '',
+      languages: ['English · Fluent'],
+      memberSince: '2024',
+      avatarUrl: `${base}/members/avatar/${username}/128`,
+    };
   }
-
-  return {
-    username,
-    name: name || username,
-    city: city || 'Berlin',
-    country: country || 'Germany',
-    accommodation,
-    maxGuests,
-    aboutMe,
-    languages: languages.length > 0 ? languages : ['English · Fluent'],
-    memberSince,
-    avatarUrl: `${base}/members/avatar/${username}/128`,
-  };
 }
 
 /**
@@ -364,6 +309,9 @@ export async function fetchMemberTrips(): Promise<Trip[]> {
     });
     saveCookiesFromResponse(res);
     const html = await res.text();
+    if (html.includes('legsdisplay')) {
+      console.log('=== BEGIN VISITORS HTML ===\n' + html + '\n=== END VISITORS HTML ===');
+    }
     const trips: Trip[] = [];
     const tripBlocks = html.matchAll(
       /class="[^"]*(?:p-trip|trip-card|trip-item)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
@@ -398,69 +346,7 @@ export async function fetchMemberTrips(): Promise<Trip[]> {
  * (/widget/conversations, /conversations/, /messages/, etc.)
  */
 export function parseConversationsFromHtml(html: string, base: string): Conversation[] {
-  const conversations: Conversation[] = [];
-  if (!html || html.includes('name="_csrf_token"')) return conversations;
-
-  // Pattern 1: Look for rows containing a member link and preview text
-  const rowRegex = /<(?:li|div|a)[^>]*class="[^"]*(?:media|list-group-item|conversation|message|row|p-message)[^"]*"[^>]*>([\s\S]*?)<\/(?:li|div|a)>/gi;
-  let match;
-  let id = 1;
-
-  while ((match = rowRegex.exec(html)) !== null) {
-    const block = match[1];
-    const userMatch = block.match(/\/members\/([a-zA-Z0-9_\-\.]+)/i);
-    if (!userMatch || ['avatar', 'uploadavatar', 'status', 'edit', 'mydata'].includes(userMatch[1].toLowerCase())) {
-      continue;
-    }
-    const username = userMatch[1].trim();
-
-    // Check for badge like "Request Feb 13 - Feb 15 2026"
-    const badgeMatch = block.match(/(?:Request|Stay)\s+([A-Za-z0-9\s\-–]+)/i);
-    const dates = badgeMatch ? badgeMatch[1].trim() : undefined;
-
-    // Check for time like "9 months ago"
-    const timeMatch = block.match(/(\d+\s+(?:minutes?|hours?|days?|months?|years?)\s+ago)/i);
-    const time = timeMatch ? timeMatch[1].trim() : 'Recently';
-
-    // Check for avatar
-    const hasAvatar = block.includes(`/members/avatar/${username}`) && !block.includes('empty_avatar');
-    const avatarUrl = hasAvatar ? `${base}/members/avatar/${username}/128` : undefined;
-
-    // Extract text snippet
-    const textClean = block
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    conversations.push({
-      id: id++,
-      isRequest: Boolean(dates),
-      direction: 'incoming',
-      otherUsername: username,
-      otherName: username,
-      otherInitials: username.slice(0, 2).toUpperCase(),
-      otherColor: ['#0EA5E9', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899'][id % 5],
-      otherAvatarUrl: avatarUrl,
-      otherCity: '',
-      dates,
-      unread: block.includes('unread') || block.includes('font-weight-bold') || block.includes('bold'),
-      time,
-      positiveRefs: 5,
-      messages: [
-        {
-          id: 1,
-          senderName: username,
-          isMine: false,
-          body: textClean.slice(0, 160),
-          time,
-        },
-      ],
-    });
-  }
-
-  return conversations;
+  return parseConversationsWidget(html, base);
 }
 
 /**
@@ -479,8 +365,8 @@ export async function fetchMemberConversations(): Promise<Conversation[]> {
     saveCookiesFromResponse(res);
     const html = await res.text();
 
-    if (!res.url.includes('/login') && !html.includes('name="_csrf_token"')) {
-      const parsed = parseConversationsFromHtml(html, base);
+    if (!res.url.includes('/login')) {
+      const parsed = parseConversationsWidget(html, base);
       if (parsed.length > 0) {
         return parsed;
       }
@@ -497,7 +383,7 @@ export async function fetchMemberConversations(): Promise<Conversation[]> {
     saveCookiesFromResponse(fullRes);
     const fullHtml = await fullRes.text();
     if (!fullRes.url.includes('/login')) {
-      const parsed = parseConversationsFromHtml(fullHtml, base);
+      const parsed = parseConversationsWidget(fullHtml, base);
       if (parsed.length > 0) {
         return parsed;
       }
@@ -511,9 +397,9 @@ export async function fetchMemberConversations(): Promise<Conversation[]> {
 }
 
 /**
- * Fetches the visitor count from BeWelcome (/widget/visitors).
+ * Fetches the visitors / travellers in member's area from BeWelcome (/widget/visitors).
  */
-export async function fetchMemberVisitorsCount(): Promise<number> {
+export async function fetchMemberVisitors(): Promise<Trip[]> {
   const base = getEffectiveApiBaseUrl();
   try {
     const res = await fetch(`${base}/widget/visitors`, {
@@ -525,9 +411,21 @@ export async function fetchMemberVisitorsCount(): Promise<number> {
     });
     saveCookiesFromResponse(res);
     const html = await res.text();
-    const countMatch = html.match(/Visitors\s*\((\d+)\)/i) || html.match(/(\d+)\s*traveller/i);
-    if (countMatch?.[1]) {
-      return parseInt(countMatch[1], 10);
+    return parseVisitorsWidget(html, base);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetches the visitor count from BeWelcome (/widget/visitors).
+ */
+export async function fetchMemberVisitorsCount(): Promise<number> {
+  const base = getEffectiveApiBaseUrl();
+  try {
+    const visitors = await fetchMemberVisitors();
+    if (visitors.length > 0) {
+      return visitors.length;
     }
     return 4;
   } catch {
@@ -550,6 +448,9 @@ export async function fetchMemberActivities(): Promise<ActivityEvent[]> {
     });
     saveCookiesFromResponse(res);
     const html = await res.text();
+    if (html.includes('legsdisplay')) {
+      console.log('=== BEGIN VISITORS HTML ===\n' + html + '\n=== END VISITORS HTML ===');
+    }
     const activities: ActivityEvent[] = [];
     const actBlocks = html.matchAll(
       /class="[^"]*(?:activity-item|event-item)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi

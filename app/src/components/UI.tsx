@@ -15,6 +15,10 @@ export function Avatar({
 }) {
   const [loadError, setLoadError] = useState(false);
 
+  React.useEffect(() => {
+    setLoadError(false);
+  }, [uri]);
+
   if (uri && !loadError) {
     return (
       <View

@@ -7,7 +7,8 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { Calendar, ChevronRight, Clock, Mail, MapPin, Plus, Search } from 'lucide-react-native';
+import { Calendar, ChevronRight, Clock, Mail, MapPin, Plus, Search, User } from 'lucide-react-native';
+import { getEffectiveApiBaseUrl } from '../api/bewelcomeApi';
 import { Avatar, Badge, Button, Card, SegmentedTabs } from '../components/UI';
 import { useApp } from '../context/AppContext';
 import { breakpoints, colors, radii } from '../theme/tokens';
@@ -31,7 +32,8 @@ export function HomeDashboardScreen() {
   const [activeWidgetTab, setActiveWidgetTab] = useState<'messages' | 'visitors'>('messages');
   const [filterMode, setFilterMode] = useState<'all' | 'unread'>('all');
 
-  const myTrip = trips.find((t) => t.isMine) || trips[0];
+  const myTrip = trips.find((t) => t.isMine);
+  const visitorTrips = trips.filter((t) => !t.isMine);
   const incomingReqs = conversations.filter((c) => c.direction === 'incoming');
   const displayConversations = conversations.filter((c) => {
     if (filterMode === 'unread') return c.unread;
@@ -311,14 +313,50 @@ export function HomeDashboardScreen() {
             </View>
           ) : (
             <View style={{ gap: 10, marginTop: 14 }}>
-              <View style={{ padding: 16, backgroundColor: colors.surfaceAlt, borderRadius: radii.md }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.ink }}>
-                  4 travellers visiting your area
-                </Text>
-                <Text style={{ fontSize: 13, color: colors.muted, marginTop: 4 }}>
-                  Members with upcoming travel plans to your city or nearby.
-                </Text>
-              </View>
+              {visitorTrips.length === 0 ? (
+                <View style={{ padding: 20, alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.ink }}>
+                    No travellers visiting nearby right now
+                  </Text>
+                  <Text style={{ fontSize: 13, color: colors.muted, textAlign: 'center' }}>
+                    Upcoming travelers looking for hosts or meetups in your area will appear here.
+                  </Text>
+                </View>
+              ) : (
+                visitorTrips.map((v) => {
+                  const username = v.travelerName || 'Traveler';
+                  const avatarUrl = `${getEffectiveApiBaseUrl()}/members/avatar/${username}/128`;
+                  return (
+                    <View
+                      key={v.id}
+                      style={[
+                        styles.reqItem,
+                        { paddingVertical: 10, paddingHorizontal: 12 },
+                      ]}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <Avatar
+                          initials={username.slice(0, 2).toUpperCase()}
+                          uri={avatarUrl}
+                          size={44}
+                        />
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: colors.ink }}>
+                            {v.title}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: colors.inkSecondary }}>
+                            {v.dateRange} · {v.travellers} traveler{v.travellers > 1 ? 's' : ''}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: colors.muted }}>
+                            posted by <Text style={{ color: colors.brand, fontWeight: '600' }}>{username}</Text>
+                          </Text>
+                        </View>
+                        <ChevronRight size={18} color={colors.muted} />
+                      </View>
+                    </View>
+                  );
+                })
+              )}
               <View style={{ alignItems: 'center', marginTop: 10 }}>
                 <Button label="Explore Hosts &amp; Visitors" variant="outline" onPress={() => navigate('explore')} />
               </View>
