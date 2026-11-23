@@ -13,8 +13,10 @@ import {
 import {
   checkBackendHealth,
   detectAuthenticatedUser,
+  fetchConversationThread,
   fetchMemberActivities,
   fetchMemberConversations,
+  fetchMemberThreads,
   fetchMemberTrips,
   fetchMemberVisitors,
   fetchMemberVisitorsCount,
@@ -54,6 +56,7 @@ interface AppContextValue {
   hosts: Member[];
   selectedHost: Member | null;
   openHostProfile: (host: Member) => void;
+  openHostProfileByUsername: (username: string) => Promise<void>;
   openRequestForHost: (host: Member) => void;
 
   trips: Trip[];
@@ -62,6 +65,7 @@ interface AppContextValue {
   setSelectedConversationId: (id: number) => void;
   updateRequestStatus: (conversationId: number, status: RequestStatus) => void;
   sendReply: (conversationId: number, body: string) => void;
+  loadConversationMessages: (conversationId: number) => Promise<void>;
   createHostingRequest: (params: {
     host: Member;
     arrival: string;
@@ -140,11 +144,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // Load user's real trips, visitors, messages, visitors count, and activities
       fetchMemberVisitorsCount().then(setVisitorsCount).catch(() => {});
-      const [realTrips, realVisitors, realConversations, realActivities] = await Promise.all([
+      const [realTrips, realVisitors, realConversations, realActivities, realThreads] = await Promise.all([
         fetchMemberTrips(),
         fetchMemberVisitors(),
         fetchMemberConversations(),
         fetchMemberActivities(),
+        fetchMemberThreads(),
       ]);
 
       const allTrips = realTrips.length > 0 ? [...realTrips, ...realVisitors] : realVisitors;
@@ -156,6 +161,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSelectedConversationId(0);
       }
       setActivities(realActivities);
+      setThreads(realThreads);
+
+      // Populate hosts list with real active community members discovered from visitors & conversations
+      const memberUsernames = new Set<string>();
+      realVisitors.forEach((v) => { if (v.travelerName) memberUsernames.add(v.travelerName); });
+      realConversations.forEach((c) => { if (c.otherUsername) memberUsernames.add(c.otherUsername); });
+
+      const discoveredHosts: Member[] = Array.from(memberUsernames).map((username, idx) => ({
+        id: idx + 1,
+        username,
+        name: username,
+        initials: username.slice(0, 2).toUpperCase(),
+        avatarColor: ['#0EA5E9', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899'][idx % 5],
+        avatarUrl: `https://bewelcome.org/members/avatar/${username}/128`,
+        city: 'Berlin',
+        country: 'Germany',
+        area: 'Berlin',
+        accommodation: 'yes' as HostingStatus,
+        maxGuests: 2,
+        positiveComments: 5,
+        languages: ['English · Fluent'],
+        memberSince: '2024',
+        lastActive: 'Recently',
+        aboutMe: `BeWelcome member. Active in hospitality exchange and community meetups.`,
+        sleeping: 'Guest room',
+        maxStay: '2-3 days',
+        houseRules: 'Non-smoking, please communicate arrival time.',
+        latitude: 52.52,
+        longitude: 13.405,
+        comments: [],
+      }));
+      if (discoveredHosts.length > 0) {
+        setHosts(discoveredHosts);
+        setSelectedHost(discoveredHosts[0]);
+      }
     } catch (err) {
       console.log('[loadUserData error]', err);
     }
@@ -215,9 +255,56 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCurrentScreen('profile');
   };
 
+  const openHostProfileByUsername = async (username: string) => {
+    try {
+      const profile = await fetchRealUserProfile(username);
+      const hostMember: Member = {
+        id: Math.abs(username.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)),
+        username: profile.username,
+        name: profile.name,
+        initials: (profile.name || profile.username).slice(0, 2).toUpperCase(),
+        avatarColor: '#0EA5E9',
+        avatarUrl: profile.avatarUrl,
+        city: profile.city,
+        country: profile.country,
+        area: profile.city,
+        accommodation: profile.accommodation,
+        maxGuests: profile.maxGuests,
+        positiveComments: 5,
+        languages: profile.languages,
+        memberSince: profile.memberSince,
+        lastActive: 'Recently',
+        aboutMe: profile.aboutMe || `BeWelcome community member based in ${profile.city}, ${profile.country}.`,
+        sleeping: 'Guest room or sofa bed',
+        maxStay: '2-3 nights',
+        houseRules: 'Respect the space and communicate arrival plans.',
+        latitude: 52.52,
+        longitude: 13.405,
+        comments: [],
+      };
+      setSelectedHost(hostMember);
+      setCurrentScreen('profile');
+    } catch (err) {
+      console.log('[openHostProfileByUsername error]', err);
+    }
+  };
+
   const openRequestForHost = (host: Member) => {
     setSelectedHost(host);
     setCurrentScreen('request');
+  };
+
+  const loadConversationMessages = async (conversationId: number) => {
+    try {
+      const msgs = await fetchConversationThread(conversationId, me.username);
+      if (msgs.length > 0) {
+        setConversations((prev) =>
+          prev.map((c) => (c.id === conversationId ? { ...c, messages: msgs } : c))
+        );
+      }
+    } catch (err) {
+      console.log('[loadConversationMessages error]', err);
+    }
   };
 
   const updateRequestStatus = (conversationId: number, status: RequestStatus) => {
@@ -329,6 +416,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         hosts,
         selectedHost,
         openHostProfile,
+        openHostProfileByUsername,
         openRequestForHost,
         trips,
         conversations,
@@ -336,6 +424,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSelectedConversationId,
         updateRequestStatus,
         sendReply,
+        loadConversationMessages,
         createHostingRequest,
         activities,
         toggleRsvp,

@@ -1,5 +1,14 @@
 import { parse } from 'node-html-parser';
-import { Conversation, Member, Trip, TripLeg, HostingStatus } from '../types/models';
+import {
+  ActivityEvent,
+  ChatMessage,
+  Conversation,
+  ForumThread,
+  HostingStatus,
+  Member,
+  Trip,
+  TripLeg,
+} from '../types/models';
 
 const COLOR_PALETTE = ['#0EA5E9', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899', '#3B82F6', '#14B8A6'];
 
@@ -277,3 +286,144 @@ export function parseMemberProfileHtml(html: string, username: string, baseUrl: 
     avatarUrl: `${baseUrl}/members/avatar/${username}/128`,
   };
 }
+
+const MONTH_NAMES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+/**
+ * Parses real upcoming activities from BeWelcome HTML (/widget/activities)
+ */
+export function parseActivitiesWidget(html: string): ActivityEvent[] {
+  if (!html || !html.includes('activitiesdisplay')) return [];
+  const root = parse(html);
+  const items = root.querySelectorAll('.c-dashboard__item');
+  const activities: ActivityEvent[] = [];
+
+  items.forEach((item, index) => {
+    // Day
+    const dayEl = item.querySelector('.fa-layers-text');
+    const day = cleanText(dayEl?.textContent) || String(20 + index);
+
+    // Month
+    const monthEl = item.querySelector('.u-font-400');
+    const monthNum = parseInt(cleanText(monthEl?.textContent), 10);
+    const month = monthNum >= 1 && monthNum <= 12 ? MONTH_NAMES[monthNum - 1] : 'NOV';
+
+    // Title and link
+    const titleLink = item.querySelector('strong a') || item.querySelector('a[href*="activities/"]');
+    const title = cleanText(titleLink?.textContent) || `Activity #${index + 1}`;
+    const href = titleLink?.getAttribute('href') || '';
+    const idMatch = href.match(/activities\/(\d+)/i);
+    const id = idMatch ? parseInt(idMatch[1], 10) : index + 1;
+
+    // Location
+    const ellipsisPs = item.querySelectorAll('p.u-ellipsis');
+    const locP = ellipsisPs.length > 1 ? ellipsisPs[1] : item.querySelector('.u-text-14');
+    const city = cleanText(locP?.textContent) || 'Berlin, Germany';
+
+    // Going count
+    const bodyText = cleanText(item.textContent);
+    const goingMatch = bodyText.match(/(\d+)\s*(?:Yes|going)/i);
+    const goingCount = goingMatch ? parseInt(goingMatch[1], 10) : 1;
+
+    const accentPalette = ['#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'];
+    const accent = accentPalette[index % accentPalette.length];
+
+    activities.push({
+      id,
+      month,
+      day,
+      title,
+      description: `Community meetup in ${city}. Join other BeWelcome members!`,
+      timeLabel: `${month} ${day} · 19:00`,
+      city,
+      goingCount,
+      isGoing: false,
+      accent,
+    });
+  });
+
+  return activities;
+}
+
+/**
+ * Parses group threads from BeWelcome HTML (/widget/threads)
+ */
+export function parseThreadsWidget(html: string): ForumThread[] {
+  if (!html || (html.includes('name="_csrf_token"') && !html.includes('c-dashboard'))) return [];
+  const root = parse(html);
+  const items = root.querySelectorAll('.c-dashboard__item');
+  const threads: ForumThread[] = [];
+
+  items.forEach((item, index) => {
+    const link = item.querySelector('a[href*="thread/"]') || item.querySelector('strong a') || item.querySelector('a');
+    if (!link) return;
+    const title = cleanText(link.textContent);
+    if (!title || title.toLowerCase().includes('bewelcome')) return;
+
+    const href = link.getAttribute('href') || '';
+    const idMatch = href.match(/thread\/(\d+)/i);
+    const id = idMatch ? parseInt(idMatch[1], 10) : index + 1;
+
+    const groupLink = item.querySelector('a[href*="group/"]');
+    const groupName = cleanText(groupLink?.textContent) || 'Community Agora';
+
+    const authorLink = item.querySelector('a[href*="members/"]');
+    const author = cleanText(authorLink?.textContent) || 'Member';
+
+    threads.push({
+      id,
+      groupName,
+      title,
+      author,
+      replies: 1,
+      timeAgo: 'Recently',
+      language: 'EN',
+    });
+  });
+
+  return threads;
+}
+
+/**
+ * Parses message history from a single conversation page (/conversation/{id})
+ */
+export function parseConversationThreadMessages(html: string, myUsername: string): ChatMessage[] {
+  if (!html) return [];
+  const root = parse(html);
+  const messages: ChatMessage[] = [];
+
+  const messageBlocks = root.querySelectorAll('.c-message, .message, .o-chat-bubble, [id^="message_"]');
+
+  if (messageBlocks.length > 0) {
+    messageBlocks.forEach((block, idx) => {
+      const senderLink = block.querySelector('a[href*="/members/"]');
+      const senderName = cleanText(senderLink?.textContent) || 'Member';
+      const isMine =
+        senderName.toLowerCase() === myUsername.toLowerCase() ||
+        block.classList.contains('message--mine') ||
+        block.classList.contains('outgoing');
+
+      const bodyEl =
+        block.querySelector('.message__body') ||
+        block.querySelector('.c-message__content') ||
+        block.querySelector('p');
+      const body = cleanText(bodyEl?.textContent) || '';
+
+      const timeEl = block.querySelector('time') || block.querySelector('.time') || block.querySelector('.u-font-300');
+      const time = cleanText(timeEl?.textContent) || 'Recently';
+
+      if (body) {
+        messages.push({
+          id: idx + 1,
+          senderName,
+          isMine,
+          body,
+          time,
+        });
+      }
+    });
+  }
+
+  return messages;
+}
+

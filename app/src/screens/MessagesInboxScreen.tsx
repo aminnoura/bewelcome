@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -22,6 +22,8 @@ export function MessagesInboxScreen() {
     setSelectedConversationId,
     updateRequestStatus,
     sendReply,
+    loadConversationMessages,
+    openHostProfileByUsername,
   } = useApp();
 
   const [filter, setFilter] = useState<'all' | 'incoming' | 'outgoing'>('all');
@@ -35,6 +37,12 @@ export function MessagesInboxScreen() {
 
   const activeConv =
     conversations.find((c) => c.id === selectedConversationId) || filtered[0] || conversations[0];
+
+  useEffect(() => {
+    if (activeConv?.id) {
+      loadConversationMessages(activeConv.id);
+    }
+  }, [activeConv?.id]);
 
   const handleSend = () => {
     if (!activeConv || !draft.trim()) return;
@@ -122,14 +130,18 @@ export function MessagesInboxScreen() {
                 <ArrowLeft size={18} color={colors.ink} />
               </Pressable>
             )}
-            <Avatar initials={activeConv.otherInitials} color={activeConv.otherColor} size={38} uri={activeConv.otherAvatarUrl} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.convName}>{activeConv.otherName}</Text>
-              <Text style={styles.threadSub}>
-                {activeConv.dates} · {activeConv.guests} guest
-                {activeConv.guests === 1 ? '' : 's'} · {activeConv.otherCity}
-              </Text>
-            </View>
+            <Pressable
+              onPress={() => openHostProfileByUsername(activeConv.otherUsername)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
+            >
+              <Avatar initials={activeConv.otherInitials} color={activeConv.otherColor} size={38} uri={activeConv.otherAvatarUrl} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.convName}>{activeConv.otherName}</Text>
+                <Text style={styles.threadSub}>
+                  {activeConv.dates ? `${activeConv.dates} · ` : ''}View Profile →
+                </Text>
+              </View>
+            </Pressable>
           </View>
 
           {activeConv.direction === 'incoming' && (

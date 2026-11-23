@@ -3,9 +3,13 @@ import {
   parseConversationsWidget,
   parseVisitorsWidget,
   parseMemberProfileHtml,
+  parseActivitiesWidget,
+  parseThreadsWidget,
+  parseConversationThreadMessages,
 } from '../services/htmlToJsonParser';
 import {
   ActivityEvent,
+  ChatMessage,
   CommunityGroup,
   Conversation,
   ForumThread,
@@ -309,8 +313,8 @@ export async function fetchMemberTrips(): Promise<Trip[]> {
     });
     saveCookiesFromResponse(res);
     const html = await res.text();
-    if (html.includes('legsdisplay')) {
-      console.log('=== BEGIN VISITORS HTML ===\n' + html + '\n=== END VISITORS HTML ===');
+    if (html.includes('activitiesdisplay')) {
+      console.log('=== FULL ACTIVITIES ===\n' + html + '\n=== END FULL ACTIVITIES ===');
     }
     const trips: Trip[] = [];
     const tripBlocks = html.matchAll(
@@ -448,32 +452,52 @@ export async function fetchMemberActivities(): Promise<ActivityEvent[]> {
     });
     saveCookiesFromResponse(res);
     const html = await res.text();
-    if (html.includes('legsdisplay')) {
-      console.log('=== BEGIN VISITORS HTML ===\n' + html + '\n=== END VISITORS HTML ===');
-    }
-    const activities: ActivityEvent[] = [];
-    const actBlocks = html.matchAll(
-      /class="[^"]*(?:activity-item|event-item)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
-    );
-    let idCounter = 1;
-    for (const block of actBlocks) {
-      const content = block[1];
-      const titleMatch = content.match(/<h[2-4][^>]*>\s*([^<]+)\s*<\/h[2-4]>/i);
-      const title = titleMatch?.[1]?.trim() || `Activity #${idCounter}`;
-      activities.push({
-        id: idCounter++,
-        month: 'NOV',
-        day: String(20 + idCounter),
-        title,
-        city: 'Local',
-        timeLabel: '18:00',
-        goingCount: 1,
-        isGoing: true,
-        accent: '#10B981',
-        description: 'Community meetup',
-      });
-    }
-    return activities;
+    return parseActivitiesWidget(html);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetches the member's group threads from BeWelcome (/widget/threads).
+ */
+export async function fetchMemberThreads(): Promise<ForumThread[]> {
+  const base = getEffectiveApiBaseUrl();
+  try {
+    const res = await fetch(`${base}/widget/threads`, {
+      credentials: 'include',
+      headers: {
+        Accept: 'text/html',
+        ...(Platform.OS !== 'web' && getCookieHeader() ? { Cookie: getCookieHeader() } : {}),
+      },
+    });
+    saveCookiesFromResponse(res);
+    const html = await res.text();
+    return parseThreadsWidget(html);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetches full message history for a conversation thread from BeWelcome (/conversation/{id}).
+ */
+export async function fetchConversationThread(
+  conversationId: number,
+  myUsername: string
+): Promise<ChatMessage[]> {
+  const base = getEffectiveApiBaseUrl();
+  try {
+    const res = await fetch(`${base}/conversation/${conversationId}`, {
+      credentials: 'include',
+      headers: {
+        Accept: 'text/html',
+        ...(Platform.OS !== 'web' && getCookieHeader() ? { Cookie: getCookieHeader() } : {}),
+      },
+    });
+    saveCookiesFromResponse(res);
+    const html = await res.text();
+    return parseConversationThreadMessages(html, myUsername);
   } catch {
     return [];
   }

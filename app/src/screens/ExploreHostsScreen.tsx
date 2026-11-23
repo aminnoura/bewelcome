@@ -19,7 +19,7 @@ import { HostingStatus, LocationSuggestion } from '../types/models';
 export function ExploreHostsScreen() {
   const { width } = useWindowDimensions();
   const isDesktop = width >= breakpoints.desktop;
-  const { hosts, openHostProfile, openRequestForHost } = useApp();
+  const { hosts, openHostProfile, openHostProfileByUsername, openRequestForHost } = useApp();
 
   const [query, setQuery] = useState('');
   const [filterAcc, setFilterAcc] = useState<'all' | HostingStatus>('all');
@@ -116,7 +116,7 @@ export function ExploreHostsScreen() {
           {liveMembers.map((u) => (
             <Pressable
               key={`mem-${u}`}
-              onPress={() => setQuery(u)}
+              onPress={() => openHostProfileByUsername(u)}
               style={[styles.suggestChip, { backgroundColor: colors.greenSoft }]}
             >
               <Text style={[styles.suggestText, { color: colors.greenText }]}>@{u}</Text>
